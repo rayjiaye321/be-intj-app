@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#202840" />
+    <title>INTJ 知识卡片</title>
+    <link rel="manifest" href="./manifest.json" />
+    <link
+      rel="icon"
+      href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="8" fill="%23202840"/><path d="M14 16h36v8H14zM14 30h26v8H14zM14 44h18v8H14z" fill="%23f8f1d8"/></svg>'
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <section id="lockScreen" class="lock-screen" aria-label="密码验证">
+      <div class="pixel-card lock-card">
+        <p class="pixel-eyebrow">POCKET KNOWLEDGE</p>
+        <h1>INTJ 卡片库</h1>
+        <p class="lock-copy">输入 6 位数字密码进入。</p>
+        <form id="lockForm" class="lock-form">
+          <input
+            id="passwordInput"
+            type="password"
+            inputmode="numeric"
+            maxlength="6"
+            pattern="[0-9]{6}"
+            autocomplete="off"
+            placeholder="••••••"
+            aria-label="6 位数字密码"
+          />
+          <button type="submit" class="pixel-primary">进入</button>
+        </form>
+        <p id="lockHint" class="pixel-hint">密码只能在项目代码中修改。</p>
+      </div>
+    </section>
+
+    <div id="appShell" class="app-shell locked" aria-hidden="true">
+      <header class="topbar pixel-card">
+        <div>
+          <p class="pixel-eyebrow">INTJ KNOWLEDGE</p>
+          <h1>知识卡片</h1>
+        </div>
+        <div class="topbar-meta">
+          <span id="networkBadge" class="status-pill">在线</span>
+          <span id="cardCount" class="stat-pill">0 张</span>
+        </div>
+      </header>
+
+      <nav class="nav-grid" aria-label="主菜单">
+        <button type="button" class="nav-tile active" data-view="new">新建</button>
+        <button type="button" class="nav-tile" data-view="search">查找</button>
+        <button type="button" class="nav-tile" data-view="organize">整理</button>
+        <button type="button" class="nav-tile" data-view="settings">设置</button>
+      </nav>
+
+      <main class="view-stack">
+        <section id="view-new" class="view-panel active" data-view-panel="new">
+          <div class="pixel-card">
+            <div class="panel-head">
+              <div>
+                <h2>新建</h2>
+                <p>导入链接或正文，用 Kimi 提炼成知识卡片。</p>
+              </div>
+            </div>
+
+            <form id="importForm" class="stack">
+              <label class="field">
+                <span>来源链接</span>
+                <input id="sourceUrl" type="url" placeholder="https://..." autocomplete="off" />
+              </label>
+
+              <label class="field">
+                <span>来源类型</span>
+                <select id="sourceType">
+                  <option value="auto">自动识别</option>
+                  <option value="page">网页文章</option>
+                  <option value="social">社媒内容</option>
+                  <option value="text">粘贴正文</option>
+                </select>
+              </label>
+
+              <div class="button-row compact-row">
+                <button type="button" id="pasteBtn" class="pixel-btn">粘贴内容</button>
+                <button type="button" id="demoBtn" class="pixel-btn">示例</button>
+              </div>
+
+              <label class="field">
+                <span>原始内容</span>
+                <textarea id="rawText" rows="8" placeholder="粘贴正文，或只填写链接后提炼。"></textarea>
+              </label>
+
+              <div class="button-row">
+                <button type="button" id="extractBtn" class="pixel-primary">提炼</button>
+                <button type="button" id="extractTextBtn" class="pixel-btn">只提炼正文</button>
+                <button type="button" id="autoSaveBtn" class="pixel-btn">自动入库</button>
+                <button type="button" id="clearDraftBtn" class="pixel-btn">清空</button>
+              </div>
+
+              <p id="importHint" class="pixel-hint">等待输入内容。</p>
+
+              <div class="review-grid">
+                <label class="field">
+                  <span>核心知识点</span>
+                  <textarea id="coreKnowledge" rows="6" placeholder="主题：...\A观点1：..." ></textarea>
+                </label>
+
+                <label class="field">
+                  <span>案例</span>
+                  <textarea id="caseText" rows="4" placeholder="保留案例或例证"></textarea>
+                </label>
+
+                <label class="field">
+                  <span>分类</span>
+                  <input id="category" list="categoryList" type="text" placeholder="认知 / 学习 / 决策" />
+                  <datalist id="categoryList"></datalist>
+                </label>
+              </div>
+
+              <div class="button-row">
+                <button type="submit" id="saveBtn" class="pixel-primary">保存卡片</button>
+                <button type="button" id="cancelEditBtn" class="pixel-btn hidden">取消编辑</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section id="view-search" class="view-panel" data-view-panel="search">
+          <div class="pixel-card">
+            <div class="panel-head">
+              <div>
+                <h2>查找</h2>
+                <p>按分类筛选，并用关键词搜索知识点。</p>
+              </div>
+            </div>
+
+            <div class="library-controls">
+              <label class="field">
+                <span>关键词</span>
+                <input id="searchInput" type="search" placeholder="搜索知识点、案例、分类" autocomplete="off" />
+              </label>
+
+              <label class="field">
+                <span>分类</span>
+                <select id="categoryFilter">
+                  <option value="">全部分类</option>
+                </select>
+              </label>
+
+              <button type="button" id="resetFilterBtn" class="pixel-btn">重置</button>
+            </div>
+
+            <div id="emptyState" class="empty-state">还没有卡片。先新建一张。</div>
+            <div id="cardsList" class="cards-list" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="view-organize" class="view-panel" data-view-panel="organize">
+          <div class="pixel-card">
+            <div class="panel-head">
+              <div>
+                <h2>整理</h2>
+                <p>浏览全部卡片，进入详情后编辑分类或删除。</p>
+              </div>
+            </div>
+
+            <div class="button-row backup-row">
+              <button type="button" id="exportBtn" class="pixel-btn">导出备份</button>
+              <button type="button" id="importBtn" class="pixel-btn">导入备份</button>
+              <button type="button" id="clearAllBtn" class="danger-ghost-btn">清空全部</button>
+            </div>
+
+            <div id="organizeEmptyState" class="empty-state">还没有卡片。</div>
+            <div id="organizeCardsList" class="cards-list" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="view-settings" class="view-panel" data-view-panel="settings">
+          <div class="pixel-card">
+            <div class="panel-head">
+              <div>
+                <h2>设置</h2>
+                <p>Kimi API 的启用、更改和保存都在这里。</p>
+              </div>
+            </div>
+
+            <section class="settings-box" aria-label="Kimi API 设置">
+              <div class="settings-head">
+                <div>
+                  <h3>Kimi API</h3>
+                  <p>可在这里修改并保存到服务器，页面不会长期保留明文密钥。</p>
+                </div>
+              </div>
+              <div class="settings-grid">
+                <label class="field">
+                  <span>Kimi API Key</span>
+                  <input id="kimiApiKey" type="password" autocomplete="off" placeholder="sk-..." />
+                </label>
+
+                <label class="field">
+                  <span>Kimi Base URL</span>
+                  <input id="kimiBaseUrl" type="url" autocomplete="off" placeholder="https://api.moonshot.cn/v1" />
+                </label>
+
+                <label class="field">
+                  <span>Kimi Model</span>
+                  <input id="kimiModel" type="text" autocomplete="off" placeholder="kimi-k2.6" />
+                </label>
+
+                <p id="kimiStatus" class="pixel-hint">等待读取服务器配置。</p>
+                <div class="button-row settings-actions">
+                  <button type="button" id="saveKimiBtn" class="pixel-primary">保存配置</button>
+                  <button type="button" id="testKimiBtn" class="pixel-btn">测试连接</button>
+                  <button type="button" id="clearKimiBtn" class="danger-ghost-btn">清空 Key</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast" aria-live="polite" aria-atomic="true"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

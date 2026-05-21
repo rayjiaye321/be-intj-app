@@ -1,0 +1,18 @@
+{
+  "name": "be-intj-knowledge-cards",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "guide": "start DEPLOYMENT_GUIDE.md",
+    "check": "node --check server.js && node --check app.js && node --check sw.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "^1.60.0"
+  }
+}
