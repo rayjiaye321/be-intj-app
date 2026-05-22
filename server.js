@@ -969,20 +969,26 @@ async function renderTextPage(url) {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
-    return await page.evaluate(() => {
-      const metas = Array.from(document.querySelectorAll("meta"))
-        .map((meta) => ({
-          name: meta.getAttribute("name") || meta.getAttribute("property") || "",
-          content: meta.getAttribute("content") || "",
-        }))
-        .filter((meta) => /title|description|keywords|og:title|og:description/i.test(meta.name));
-      const title = document.title || "";
-      const articleText = document.querySelector("article")?.innerText || "";
-      const mainText = document.querySelector("main")?.innerText || "";
-      const bodyText = document.body?.innerText || "";
-      const metaText = metas.map((meta) => meta.content).filter(Boolean).join("\n");
-      return [title, metaText, articleText, mainText, bodyText].filter(Boolean).join("\n\n");
-    });
+    await page.waitForTimeout(1200);
+
+    let lastError = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const html = await page.content();
+        const title = extractTitle(html);
+        const description = extractMeta(html, "description") || extractMeta(html, "og:description");
+        const text = stripHtml(html);
+        const combined = [title, description, text].filter(Boolean).join("\n\n");
+        if (combined.trim().length >= 20) return combined;
+      } catch (error) {
+        lastError = error;
+        if (!/Execution context was destroyed|navigation|Target closed|closed/i.test(error.message || "")) {
+          throw error;
+        }
+      }
+      await page.waitForTimeout(1200);
+    }
+    throw lastError || new Error("未能提取页面正文");
   } finally {
     await context.close();
   }
