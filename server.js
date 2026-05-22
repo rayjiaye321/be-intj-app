@@ -594,6 +594,11 @@ async function captureDouyinMedia(url) {
   });
   const page = await context.newPage();
   const candidates = [];
+  page.on("dialog", async (dialog) => {
+    try {
+      await dialog.dismiss();
+    } catch {}
+  });
   page.on("response", async (response) => {
     const responseUrl = response.url();
     const headers = response.headers();
@@ -615,7 +620,13 @@ async function captureDouyinMedia(url) {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(1500);
+    await dismissDouyinLoginWall(page);
+    await startDouyinPlayback(page);
+    await page.waitForTimeout(2000);
+    await dismissDouyinLoginWall(page);
+    await startDouyinPlayback(page);
+    await page.waitForTimeout(5000);
   } finally {
     await context.close();
   }
@@ -632,6 +643,79 @@ async function captureDouyinMedia(url) {
     return (b.contentLength || 0) - (a.contentLength || 0);
   });
   return unique;
+}
+
+async function clickFirstMatch(page, selectors, timeout = 1200) {
+  for (const selector of selectors) {
+    try {
+      const locator = page.locator(selector).first();
+      await locator.waitFor({ state: "visible", timeout });
+      await locator.click({ timeout, force: true });
+      return true;
+    } catch {}
+  }
+  return false;
+}
+
+async function dismissDouyinLoginWall(page) {
+  const selectors = [
+    'button:has-text("取消")',
+    'button:has-text("关闭")',
+    'button:has-text("稍后")',
+    'button:has-text("以后再说")',
+    'button:has-text("下次再说")',
+    'button:has-text("暂不")',
+    'button:has-text("我知道了")',
+    '[role="button"]:has-text("取消")',
+    '[role="button"]:has-text("关闭")',
+    '[role="button"]:has-text("稍后")',
+    '[role="button"]:has-text("以后再说")',
+    '[role="button"]:has-text("下次再说")',
+    '[role="button"]:has-text("暂不")',
+    '[role="button"]:has-text("我知道了")',
+    'a:has-text("取消")',
+    'a:has-text("关闭")',
+    'a:has-text("稍后")',
+    'a:has-text("以后再说")',
+    'a:has-text("下次再说")',
+    'a:has-text("暂不")',
+  ];
+  await clickFirstMatch(page, selectors, 1000);
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.waitForTimeout(800);
+}
+
+async function startDouyinPlayback(page) {
+  const selectors = [
+    'button:has-text("播放")',
+    '[aria-label*="播放"]',
+    '[class*="play"]',
+    'video',
+  ];
+  for (const selector of selectors) {
+    try {
+      const locator = page.locator(selector).first();
+      await locator.waitFor({ state: "visible", timeout: 1200 });
+      await locator.click({ timeout: 1200, force: true }).catch(() => {});
+      break;
+    } catch {}
+  }
+  try {
+    await page.mouse.click(680, 450);
+  } catch {}
+  try {
+    await page.evaluate(() => {
+      const videos = Array.from(document.querySelectorAll("video"));
+      for (const video of videos) {
+        try {
+          video.muted = true;
+          video.play?.();
+        } catch {}
+      }
+    });
+  } catch {}
+  await page.keyboard.press("Space").catch(() => {});
+  await page.keyboard.press("Enter").catch(() => {});
 }
 
 async function downloadMedia(media, url, awemeId) {
