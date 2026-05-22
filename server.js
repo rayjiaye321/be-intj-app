@@ -604,16 +604,21 @@ async function captureDouyinMedia(url) {
     const headers = response.headers();
     const contentType = headers["content-type"] || "";
     const contentLength = Number(headers["content-length"] || 0);
-    const isAudio = /media-audio|audio|mime_type=video_mp4/i.test(responseUrl) && /douyinvod|byte/i.test(responseUrl);
-    const isVideo = /media-video|video/i.test(responseUrl) && /douyinvod|byte/i.test(responseUrl);
-    if (!isAudio && !isVideo) return;
-    if (!/video|audio|octet/i.test(contentType)) return;
+    const resourceType = response.request().resourceType();
+    const looksLikeMedia =
+      resourceType === "media" ||
+      /video|audio|octet|mpegurl|m3u8/i.test(contentType) ||
+      /video|audio|m3u8|playwm|playurl|aweme|snssdk|douyinvod|byte|stream|segment|manifest/i.test(responseUrl);
+    if (!looksLikeMedia) return;
+    const isAudio = /audio/i.test(contentType) || /audio/i.test(responseUrl) || /mime_type=audio/i.test(responseUrl);
+    const isVideo = !isAudio;
     candidates.push({
       url: responseUrl,
       contentType,
       contentLength,
       kind: isAudio ? "audio" : "video",
       status: response.status(),
+      resourceType,
       headers,
     });
   });
@@ -627,6 +632,8 @@ async function captureDouyinMedia(url) {
     await dismissDouyinLoginWall(page);
     await startDouyinPlayback(page);
     await page.waitForTimeout(5000);
+    const domHints = await collectDouyinMediaHints(page);
+    candidates.push(...domHints);
   } finally {
     await context.close();
   }
@@ -640,9 +647,49 @@ async function captureDouyinMedia(url) {
   }
   unique.sort((a, b) => {
     if (a.kind !== b.kind) return a.kind === "audio" ? -1 : 1;
+    if (a.resourceType !== b.resourceType) {
+      if (a.resourceType === "media") return -1;
+      if (b.resourceType === "media") return 1;
+    }
     return (b.contentLength || 0) - (a.contentLength || 0);
   });
   return unique;
+}
+
+async function collectDouyinMediaHints(page) {
+  return page.evaluate(() => {
+    const results = [];
+    const push = (url, kind = "video", source = "dom") => {
+      if (!url || typeof url !== "string") return;
+      if (url.startsWith("blob:")) return;
+      if (!/https?:\/\//i.test(url)) return;
+      results.push({
+        url,
+        kind,
+        contentType: "",
+        contentLength: 0,
+        status: 0,
+        resourceType: source,
+        headers: {},
+      });
+    };
+
+    for (const video of Array.from(document.querySelectorAll("video"))) {
+      push(video.currentSrc || video.src || "", "video", "video");
+      for (const source of Array.from(video.querySelectorAll("source"))) {
+        push(source.src || source.getAttribute("src") || "", "video", "source");
+      }
+    }
+
+    for (const entry of performance.getEntriesByType("resource")) {
+      const name = entry.name || "";
+      if (!/https?:\/\//i.test(name)) continue;
+      if (!/video|audio|m3u8|playwm|playurl|aweme|snssdk|douyinvod|byte|stream|segment|manifest/i.test(name)) continue;
+      push(name, /audio/i.test(name) ? "audio" : "video", "performance");
+    }
+
+    return results;
+  });
 }
 
 async function clickFirstMatch(page, selectors, timeout = 1200) {
