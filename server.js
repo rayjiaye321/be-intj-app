@@ -919,7 +919,7 @@ async function transcribeSubtitleFrames(framePaths) {
 
 async function fetchPage(url) {
   const target = new URL(url);
-  if (!["http:", "https:"].includes(target.protocol)) throw new Error("只支持 http 或 https 链接");
+  if (!["http:", "https:"].includes(target.protocol)) throw new Error("??? http ? https ??");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
@@ -934,10 +934,10 @@ async function fetchPage(url) {
       redirect: "follow",
     });
 
-    if (!response.ok) throw new Error(`页面返回 ${response.status}`);
+    if (!response.ok) throw new Error(`???? ${response.status}????????????`);
     const contentType = response.headers.get("content-type") || "";
     if (!/text\/html|text\/plain|application\/xhtml\+xml/i.test(contentType)) {
-      throw new Error("链接不是可解析文本页面");
+      throw new Error("???????????");
     }
 
     const reader = response.body?.getReader();
@@ -954,6 +954,37 @@ async function fetchPage(url) {
     return new TextDecoder("utf-8").decode(Buffer.concat(chunks));
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function renderTextPage(url) {
+  const browser = await getBrowser();
+  const context = await browser.newContext({
+    locale: "zh-CN",
+    viewport: { width: 1365, height: 900 },
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+  });
+  const page = await context.newPage();
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
+    return await page.evaluate(() => {
+      const metas = Array.from(document.querySelectorAll("meta"))
+        .map((meta) => ({
+          name: meta.getAttribute("name") || meta.getAttribute("property") || "",
+          content: meta.getAttribute("content") || "",
+        }))
+        .filter((meta) => /title|description|keywords|og:title|og:description/i.test(meta.name));
+      const title = document.title || "";
+      const articleText = document.querySelector("article")?.innerText || "";
+      const mainText = document.querySelector("main")?.innerText || "";
+      const bodyText = document.body?.innerText || "";
+      const metaText = metas.map((meta) => meta.content).filter(Boolean).join("\n");
+      return [title, metaText, articleText, mainText, bodyText].filter(Boolean).join("\n\n");
+    });
+  } finally {
+    await context.close();
   }
 }
 
