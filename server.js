@@ -818,6 +818,81 @@ async function transcribeDouyin(url) {
   };
 }
 
+async function ocrDouyinSubtitles(url) {
+  const browser = await getBrowser();
+  const context = await browser.newContext({
+    locale: "zh-CN",
+    viewport: { width: 1365, height: 900 },
+    userAgent:
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+  });
+  const page = await context.newPage();
+  const frames = [];
+  page.on("dialog", async (dialog) => {
+    try {
+      await dialog.dismiss();
+    } catch {}
+  });
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+    await dismissDouyinLoginWall(page);
+    await startDouyinPlayback(page);
+    await page.waitForTimeout(1500);
+    await captureSubtitleFrames(page, frames);
+    if (frames.length < 2) {
+      await page.waitForTimeout(1500);
+      await captureSubtitleFrames(page, frames);
+    }
+  } finally {
+    await context.close();
+  }
+
+  if (!frames.length) {
+    throw new Error("没有识别到可用字幕画面");
+  }
+
+  const subtitleText = await transcribeSubtitleFrames(frames);
+  const cleaned = cleanText(subtitleText);
+  if (cleaned.length < 20) {
+    throw new Error("字幕识别结果过短，未能提取到有效文案");
+  }
+
+  return {
+    ok: true,
+    sourceUrl: url,
+    method: "subtitle-ocr",
+    transcript: {
+      text: cleaned,
+      model: "rapidocr-onnxruntime",
+      segments: [],
+      duration: 0,
+    },
+    frames,
+  };
+}
+
+async function captureSubtitleFrames(page, frames) {
+  const shot = await page.screenshot({ fullPage: false });
+  await ensureMediaDir();
+  const baseName = `douyin_subtitle_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const pngPath = join(mediaDir, `${baseName}.png`);
+  await writeFile(pngPath, shot);
+  frames.push(pngPath);
+}
+
+async function transcribeSubtitleFrames(framePaths) {
+  const scriptPath = join(root, "ocr_subtitles.py");
+  const outputPath = join(mediaDir, `ocr_${Date.now()}_${Math.random().toString(16).slice(2)}.json`);
+  await runCommand(pythonCommand, [scriptPath, outputPath, ...framePaths], {
+    cwd: root,
+    env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+  });
+  const payload = JSON.parse(await readFile(outputPath, "utf8"));
+  return payload.text || "";
+}
+
 async function fetchPage(url) {
   const target = new URL(url);
   if (!["http:", "https:"].includes(target.protocol)) throw new Error("只支持 http 或 https 链接");
@@ -869,10 +944,22 @@ async function extractUrlContent(url, timing = createTiming(), onProgress = () =
     const result = rendered || douyin || { title: "", text: "", sourceUrl: url, extractor: "douyin-asr" };
 
     onProgress("提取音频并转写逐字稿");
-    const transcription = await timedStep(timing, "douyin-asr-transcribe", () => transcribeDouyin(url));
-    const fullTranscript = cleanText(transcription.transcript?.text || "");
+    let transcription;
+    let fullTranscript = "";
+    let transcriptSource = "audio";
+    try {
+      transcription = await timedStep(timing, "douyin-asr-transcribe", () => transcribeDouyin(url));
+      fullTranscript = cleanText(transcription.transcript?.text || "");
+    } catch (error) {
+      timing.steps.push({ name: "douyin-asr-failed", ms: 0, ok: false, error: error.message });
+      onProgress("音频失败，改为识别字幕");
+      const subtitle = await timedStep(timing, "douyin-subtitle-ocr", () => ocrDouyinSubtitles(url));
+      transcription = subtitle;
+      fullTranscript = cleanText(subtitle.transcript?.text || "");
+      transcriptSource = "subtitle-ocr";
+    }
     if (fullTranscript.length < 20) {
-      throw new Error("口播逐字稿内容过短，未能提取到有效文案");
+      throw new Error("逐字稿内容过短，未能提取到有效文案");
     }
 
     return {
@@ -880,11 +967,12 @@ async function extractUrlContent(url, timing = createTiming(), onProgress = () =
       text: fullTranscript,
       fullTranscript,
       transcriptMeta: {
-        source: "faster-whisper",
+        source: transcriptSource,
         model: transcription.transcript?.model || whisperModel,
         duration: transcription.transcript?.duration || 0,
         segments: transcription.transcript?.segments?.length || 0,
         media: transcription.media,
+        frames: transcription.frames?.length || 0,
       },
       sourceType: "douyin",
       timing,
