@@ -171,15 +171,13 @@ async function refreshServerStatus() {
 function detectSourceType(sourceUrl, rawText = "") {
   const selected = elements.sourceType.value;
   if (selected && selected !== "auto") return selected;
-  if (/douyin\.com|xiaohongshu\.com|weibo\.com|bilibili\.com|zhihu\.com/i.test(sourceUrl)) return "social";
   if (sourceUrl) return "page";
   if (rawText) return "text";
   return "text";
 }
 
 function normalizeBackendSourceType(type) {
-  if (type === "douyin") return "social";
-  if (type === "social" || type === "page" || type === "text") return type;
+  if (type === "page" || type === "text") return type;
   return "text";
 }
 
@@ -371,9 +369,7 @@ async function extractDraft(options = {}) {
     let title = "";
     let result = null;
     if (!options.textOnly && !extractedText && sourceUrl) {
-      elements.importHint.textContent = /douyin\.com/i.test(sourceUrl)
-        ? "正在提取抖音视频口播，长视频首次处理会更久。"
-        : "正在读取链接正文。";
+      elements.importHint.textContent = "正在读取链接正文。";
       result = await fetchReadableText(sourceUrl);
       extractedText = result.text;
       title = result.title || "";
@@ -470,7 +466,7 @@ function resetForm() {
   elements.coreKnowledge.value = "";
   elements.caseText.value = "";
   elements.category.value = "";
-  elements.sourceType.value = "auto";
+elements.sourceType.value = "auto";
   elements.sourceUrl.value = "";
   elements.rawText.value = "";
   state.editingId = null;

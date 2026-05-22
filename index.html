@@ -60,7 +60,7 @@
             <div class="panel-head">
               <div>
                 <h2>新建</h2>
-                <p>导入链接或正文，用 Kimi 提炼成知识卡片。</p>
+                <p>导入网页文章或直接粘贴正文，用 Kimi 提炼成知识卡片。</p>
               </div>
             </div>
 
@@ -70,15 +70,14 @@
                 <input id="sourceUrl" type="url" placeholder="https://..." autocomplete="off" />
               </label>
 
-              <label class="field">
-                <span>来源类型</span>
-                <select id="sourceType">
-                  <option value="auto">自动识别</option>
-                  <option value="page">网页文章</option>
-                  <option value="social">社媒内容</option>
-                  <option value="text">粘贴正文</option>
-                </select>
-              </label>
+                <label class="field">
+                  <span>来源类型</span>
+                  <select id="sourceType">
+                    <option value="auto">自动识别</option>
+                    <option value="page">网页文章</option>
+                    <option value="text">粘贴正文</option>
+                  </select>
+                </label>
 
               <div class="button-row compact-row">
                 <button type="button" id="pasteBtn" class="pixel-btn">粘贴内容</button>

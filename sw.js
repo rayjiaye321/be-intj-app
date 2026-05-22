@@ -1,4 +1,4 @@
-const CACHE_NAME = "intj-knowledge-shell-v10";
+const CACHE_NAME = "intj-knowledge-shell-v11";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.json", "./favicon.ico"];
 
 self.addEventListener("install", (event) => {

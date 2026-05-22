@@ -1,18 +1,13 @@
-import { createServer } from "node:http";
+﻿import { createServer } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { extname, join, normalize } from "node:path";
-import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 
 const root = process.cwd();
-const mediaDir = join(root, "data", "media");
 loadEnvFile();
 
-const ffmpegPath = process.env.FFMPEG_PATH || "ffmpeg";
-const pythonCommand = process.env.PYTHON || "python";
-const whisperModel = process.env.WHISPER_MODEL || "base";
 const port = Number(process.env.PORT || 4173);
 const appPassword = process.env.APP_PASSWORD || (process.env.NODE_ENV === "production" ? "" : "123456");
 const dataDir = join(root, "data");
@@ -240,29 +235,6 @@ async function readJsonBody(req) {
   return raw ? JSON.parse(raw) : {};
 }
 
-function runCommand(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { windowsHide: true, ...options });
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr?.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(new Error(stderr || stdout || `${command} exited with code ${code}`));
-    });
-  });
-}
-
-async function ensureMediaDir() {
-  await mkdir(mediaDir, { recursive: true });
-}
-
 function decodeHtmlEntities(text) {
   return String(text || "")
     .replace(/&nbsp;/g, " ")
@@ -317,604 +289,10 @@ function stripHtml(html) {
   );
 }
 
-function getDouyinAwemeId(url) {
-  const text = String(url || "");
-  const match = text.match(/douyin\.com\/video\/(\d+)/i) || text.match(/[?&]modal_id=(\d+)/i) || text.match(/[?&]item_id=(\d+)/i);
-  return match?.[1] || "";
-}
-
-function cleanText(value) {
-  return String(value || "")
-    .replace(/\\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .replace(/\u3000/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-const douyinNoise = [
-  /open app|login|captcha|copyright|privacy|terms/i,
-  /打开App|打开 app|登录|注册|验证码|扫码|推荐|关注|评论|分享|举报|隐私政策|用户服务协议|广告投放|站点地图/,
-  /抖音网页版|抖音短视频|抖音官网|下载客户端|推荐视频|热门|加载更多/,
-  /^下载抖音精选$/,
-  /^内容由AI生成$/,
-  /^展开\d*条回复$/,
-  /^全部评论$/,
-  /ICP备|公网安备|许可证|京B2|京网文|网络谣言|互联网|药品医疗|广播电视节目|©/,
-  /开启读屏标签|读屏标签已关闭|因浏览器限制|大家都在搜|发布时间|粉丝|获赞|合集/,
-  /^第\d+集\s*\|/,
-  /^@?豆包\s/,
-  /^[\d.]+万?$/,
-  /^\d+[天小时分钟秒]前/,
-  /^(\d{1,2}:)?\d{1,2}:\d{2}(?:\s*\/\s*(\d{1,2}:)?\d{1,2}:\d{2})?$/,
-];
-
-function isUsefulChineseText(value) {
-  const text = cleanText(value);
-  return text.length >= 6 && /[\u4e00-\u9fa5]/.test(text) && !douyinNoise.some((pattern) => pattern.test(text));
-}
-
-function collectTextDeep(value, output = [], seen = new WeakSet(), depth = 0) {
-  if (!value || output.length > 180 || depth > 6) return output;
-  if (typeof value === "string") {
-    const text = cleanText(safeDecodeUnicode(value));
-    if (isUsefulChineseText(text)) output.push(text);
-    return output;
-  }
-  if (typeof value !== "object") return output;
-  if (seen.has(value)) return output;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) collectTextDeep(item, output, seen, depth + 1);
-    return output;
-  }
-  for (const item of Object.values(value)) collectTextDeep(item, output, seen, depth + 1);
-  return output;
-}
-
-function uniqueUsefulLines(text, limit = 120) {
-  const relevantText = String(text || "").split(/大家都在搜|全部评论|推荐视频|合集\s*·|打开「抖音APP」|留下你的精彩评论/)[0] || "";
-  const lines = relevantText
-    .split(/\n+/)
-    .map((line) => cleanText(line))
-    .filter(isUsefulChineseText);
-  const result = [];
-  const seen = new Set();
-  for (const line of lines) {
-    const key = line.replace(/\s+/g, "");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    result.push(line);
-    if (result.length >= limit) break;
-  }
-  return result.join("\n");
-}
-
-function buildDouyinTextResult({ title = "", pageText = "", scriptText = "", stateText = "", sourceUrl = "", extractor = "douyin" }) {
-  const body = uniqueUsefulLines([stateText, pageText, scriptText].filter(Boolean).join("\n"), 140);
-  const titleLine = cleanText(title).replace(/\s*-\s*抖音.*$/i, "").trim();
-  const text = uniqueUsefulLines([titleLine, body].filter(Boolean).join("\n"), 140);
-  return {
-    title: titleLine || title || "抖音视频",
-    text,
-    pageText: uniqueUsefulLines(pageText, 80),
-    transcript: body,
-    length: text.length,
-    sourceUrl,
-    extractor,
-  };
-}
-
-function extractJsonText(value, output = []) {
-  if (!value || output.length > 24) return output;
-  if (typeof value === "string") {
-    const text = value.trim();
-    if (text.length >= 12 && /[\u4e00-\u9fa5]/.test(text)) output.push(text);
-    return output;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) extractJsonText(item, output);
-    return output;
-  }
-  if (typeof value === "object") {
-    for (const key of ["desc", "title", "text", "content", "caption", "nickname"]) {
-      if (value[key]) extractJsonText(value[key], output);
-    }
-    return output;
-  }
-  return output;
-}
-
-async function fetchDouyinMetadata(url) {
-  const awemeId = getDouyinAwemeId(url);
-  if (!awemeId) return null;
-
-  const candidates = [
-    `https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_ids=${awemeId}`,
-    `https://www.douyin.com/web/api/v2/aweme/iteminfo/?item_ids=${awemeId}`,
-    `https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id=${awemeId}&aid=6383&device_platform=webapp`,
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      const response = await fetch(candidate, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
-          Referer: url,
-          Accept: "application/json,text/plain,*/*",
-        },
-      });
-      const raw = await response.text();
-      if (!raw) continue;
-      const payload = JSON.parse(raw);
-      if (payload.status_msg === "encrypt_data_miss") continue;
-      const texts = [...new Set(collectTextDeep(payload))];
-      if (texts.length > 0) {
-        return buildDouyinTextResult({
-          title: texts[0],
-          pageText: texts.join("\n"),
-          stateText: texts.join("\n"),
-          sourceUrl: url,
-          extractor: "douyin-metadata",
-        });
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
 async function getBrowser() {
   if (sharedBrowser?.isConnected()) return sharedBrowser;
   sharedBrowser = await chromium.launch({ headless: true });
   return sharedBrowser;
-}
-
-function pickUsefulDouyinText(text) {
-  const lines = String(text || "")
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => line.length >= 8)
-    .filter((line) => !/打开App|扫码|登录|注册|客户端|抖音网页版|验证码|推荐|关注|评论|分享/.test(line));
-  return [...new Set(lines)].slice(0, 20).join("\n");
-}
-
-function safeDecodeUnicode(text) {
-  const value = String(text || "");
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value.replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
-  }
-}
-
-async function renderDouyinPage(url) {
-  const browser = await getBrowser();
-  const context = await browser.newContext({
-    locale: "zh-CN",
-    viewport: { width: 1365, height: 900 },
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
-  });
-  const page = await context.newPage();
-  try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
-    await page.waitForLoadState("networkidle", { timeout: 12000 }).catch(() => {});
-    await page.waitForTimeout(3000);
-    const data = await page.evaluate(() => {
-      const metas = Array.from(document.querySelectorAll("meta")).map((meta) => ({
-        name: meta.getAttribute("name") || meta.getAttribute("property") || "",
-        content: meta.getAttribute("content") || "",
-      }));
-      const scripts = Array.from(document.scripts)
-        .map((script) => script.textContent || "")
-        .filter((text) => /desc|aweme|caption|subtitle|title|INITIAL_STATE|REHYDRATION|UNIVERSAL|video|detail/i.test(text))
-        .slice(0, 28);
-      const stateTexts = [];
-      const seen = new Set();
-      const push = (value) => {
-        if (typeof value !== "string") return;
-        const text = value.replace(/\s+/g, " ").trim();
-        if (text.length < 6 || seen.has(text)) return;
-        if (!/[\u4e00-\u9fa5]/.test(text)) return;
-        seen.add(text);
-        stateTexts.push(text);
-      };
-      const walk = (value, depth = 0) => {
-        if (!value || depth > 5 || stateTexts.length > 160) return;
-        if (typeof value === "string") {
-          push(value);
-          return;
-        }
-        if (typeof value !== "object") return;
-        if (Array.isArray(value)) {
-          for (const item of value) walk(item, depth + 1);
-          return;
-        }
-        for (const item of Object.values(value)) walk(item, depth + 1);
-      };
-      for (const key of [
-        "__INITIAL_STATE__",
-        "__GLOBAL_STATE__",
-        "__UNIVERSAL_DATA_FOR_REHYDRATION__",
-        "__NEXT_DATA__",
-        "__NUXT__",
-        "__INITIAL_PROPS__",
-      ]) {
-        try {
-          walk(window[key]);
-        } catch {}
-      }
-      return {
-        title: document.title || "",
-        mainText: document.querySelector("main")?.innerText || "",
-        bodyText: document.body?.innerText || "",
-        metas,
-        scripts,
-        stateTexts,
-      };
-    });
-
-    const metaText = data.metas
-      .filter((meta) => /title|description|og:title|og:description|keywords/i.test(meta.name))
-      .map((meta) => meta.content)
-      .filter(Boolean)
-      .join("\n");
-    const scriptText = data.scripts.map((script) => safeDecodeUnicode(script)).join("\n");
-    const stateText = data.stateTexts.join("\n");
-    const result = buildDouyinTextResult({
-      title: data.title || "抖音视频",
-      pageText: [metaText, data.mainText, data.bodyText].filter(Boolean).join("\n"),
-      scriptText,
-      stateText,
-      sourceUrl: url,
-      extractor: "douyin-render",
-    });
-    if (result.text.length >= 20) {
-      return result;
-    }
-    return null;
-  } finally {
-    await context.close();
-  }
-}
-
-async function captureDouyinMedia(url) {
-  const browser = await getBrowser();
-  const context = await browser.newContext({
-    locale: "zh-CN",
-    viewport: { width: 1365, height: 900 },
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
-  });
-  const page = await context.newPage();
-  const candidates = [];
-  page.on("dialog", async (dialog) => {
-    try {
-      await dialog.dismiss();
-    } catch {}
-  });
-  page.on("response", async (response) => {
-    const responseUrl = response.url();
-    const headers = response.headers();
-    const contentType = headers["content-type"] || "";
-    const contentLength = Number(headers["content-length"] || 0);
-    const resourceType = response.request().resourceType();
-    const looksLikeMedia =
-      resourceType === "media" ||
-      /video|audio|octet|mpegurl|m3u8/i.test(contentType) ||
-      /video|audio|m3u8|playwm|playurl|aweme|snssdk|douyinvod|byte|stream|segment|manifest/i.test(responseUrl);
-    if (!looksLikeMedia) return;
-    const isAudio = /audio/i.test(contentType) || /audio/i.test(responseUrl) || /mime_type=audio/i.test(responseUrl);
-    const isVideo = !isAudio;
-    candidates.push({
-      url: responseUrl,
-      contentType,
-      contentLength,
-      kind: isAudio ? "audio" : "video",
-      status: response.status(),
-      resourceType,
-      headers,
-    });
-  });
-  try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(1500);
-    await dismissDouyinLoginWall(page);
-    await startDouyinPlayback(page);
-    await page.waitForTimeout(2000);
-    await dismissDouyinLoginWall(page);
-    await startDouyinPlayback(page);
-    await page.waitForTimeout(5000);
-    const domHints = await collectDouyinMediaHints(page);
-    candidates.push(...domHints);
-  } finally {
-    await context.close();
-  }
-  const unique = [];
-  const seen = new Set();
-  for (const item of candidates) {
-    const key = item.url.replace(/&dy_q=[^&]+/i, "");
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(item);
-  }
-  unique.sort((a, b) => {
-    if (a.kind !== b.kind) return a.kind === "audio" ? -1 : 1;
-    if (a.resourceType !== b.resourceType) {
-      if (a.resourceType === "media") return -1;
-      if (b.resourceType === "media") return 1;
-    }
-    return (b.contentLength || 0) - (a.contentLength || 0);
-  });
-  return unique;
-}
-
-async function collectDouyinMediaHints(page) {
-  return page.evaluate(() => {
-    const results = [];
-    const push = (url, kind = "video", source = "dom") => {
-      if (!url || typeof url !== "string") return;
-      if (url.startsWith("blob:")) return;
-      if (!/https?:\/\//i.test(url)) return;
-      results.push({
-        url,
-        kind,
-        contentType: "",
-        contentLength: 0,
-        status: 0,
-        resourceType: source,
-        headers: {},
-      });
-    };
-
-    for (const video of Array.from(document.querySelectorAll("video"))) {
-      push(video.currentSrc || video.src || "", "video", "video");
-      for (const source of Array.from(video.querySelectorAll("source"))) {
-        push(source.src || source.getAttribute("src") || "", "video", "source");
-      }
-    }
-
-    for (const entry of performance.getEntriesByType("resource")) {
-      const name = entry.name || "";
-      if (!/https?:\/\//i.test(name)) continue;
-      if (!/video|audio|m3u8|playwm|playurl|aweme|snssdk|douyinvod|byte|stream|segment|manifest/i.test(name)) continue;
-      push(name, /audio/i.test(name) ? "audio" : "video", "performance");
-    }
-
-    return results;
-  });
-}
-
-async function clickFirstMatch(page, selectors, timeout = 1200) {
-  for (const selector of selectors) {
-    try {
-      const locator = page.locator(selector).first();
-      await locator.waitFor({ state: "visible", timeout });
-      await locator.click({ timeout, force: true });
-      return true;
-    } catch {}
-  }
-  return false;
-}
-
-async function dismissDouyinLoginWall(page) {
-  const selectors = [
-    'button:has-text("取消")',
-    'button:has-text("关闭")',
-    'button:has-text("稍后")',
-    'button:has-text("以后再说")',
-    'button:has-text("下次再说")',
-    'button:has-text("暂不")',
-    'button:has-text("我知道了")',
-    '[role="button"]:has-text("取消")',
-    '[role="button"]:has-text("关闭")',
-    '[role="button"]:has-text("稍后")',
-    '[role="button"]:has-text("以后再说")',
-    '[role="button"]:has-text("下次再说")',
-    '[role="button"]:has-text("暂不")',
-    '[role="button"]:has-text("我知道了")',
-    'a:has-text("取消")',
-    'a:has-text("关闭")',
-    'a:has-text("稍后")',
-    'a:has-text("以后再说")',
-    'a:has-text("下次再说")',
-    'a:has-text("暂不")',
-  ];
-  await clickFirstMatch(page, selectors, 1000);
-  await page.keyboard.press("Escape").catch(() => {});
-  await page.waitForTimeout(800);
-}
-
-async function startDouyinPlayback(page) {
-  const selectors = [
-    'button:has-text("播放")',
-    '[aria-label*="播放"]',
-    '[class*="play"]',
-    'video',
-  ];
-  for (const selector of selectors) {
-    try {
-      const locator = page.locator(selector).first();
-      await locator.waitFor({ state: "visible", timeout: 1200 });
-      await locator.click({ timeout: 1200, force: true }).catch(() => {});
-      break;
-    } catch {}
-  }
-  try {
-    await page.mouse.click(680, 450);
-  } catch {}
-  try {
-    await page.evaluate(() => {
-      const videos = Array.from(document.querySelectorAll("video"));
-      for (const video of videos) {
-        try {
-          video.muted = true;
-          video.play?.();
-        } catch {}
-      }
-    });
-  } catch {}
-  await page.keyboard.press("Space").catch(() => {});
-  await page.keyboard.press("Enter").catch(() => {});
-}
-
-async function downloadMedia(media, url, awemeId) {
-  if (!media?.url) throw new Error("没有捕获到可下载的媒体地址。");
-  await ensureMediaDir();
-  const baseName = `douyin_${awemeId || Date.now()}_${media.kind}_${Date.now()}`;
-  const sourcePath = join(mediaDir, `${baseName}.mp4`);
-  const wavPath = join(mediaDir, `${baseName}.wav`);
-  const response = await fetch(media.url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
-      Referer: url,
-      Range: "bytes=0-",
-    },
-  });
-  if (!response.ok && response.status !== 206) throw new Error(`媒体下载失败：${response.status}`);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.length < 64 * 1024) throw new Error("下载到的媒体文件过小，可能已过期或被平台拦截。");
-  await writeFile(sourcePath, buffer);
-  await runCommand(ffmpegPath, ["-y", "-i", sourcePath, "-vn", "-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", wavPath]);
-  return { sourcePath, wavPath, bytes: buffer.length };
-}
-
-async function transcribeAudio(wavPath) {
-  const outputPath = `${wavPath}.json`;
-  await runCommand(pythonCommand, [join(root, "transcribe.py"), wavPath, outputPath, whisperModel], {
-    cwd: root,
-    env: { ...process.env, PYTHONIOENCODING: "utf-8" },
-  });
-  const payload = JSON.parse(await readFile(outputPath, "utf8"));
-  return payload;
-}
-
-async function transcribeDouyin(url) {
-  const awemeId = getDouyinAwemeId(url);
-  try {
-    const mediaCandidates = await captureDouyinMedia(url);
-    const media = mediaCandidates.find((item) => item.kind === "audio") || mediaCandidates[0];
-    if (!media) throw new Error("没有捕获到视频音频流，请确认该抖音链接可以在网页端播放。");
-    const files = await downloadMedia(media, url, awemeId);
-    const transcript = await transcribeAudio(files.wavPath);
-    return {
-      ok: true,
-      sourceUrl: url,
-      awemeId,
-      method: "audio-asr",
-      media: {
-        kind: media.kind,
-        contentType: media.contentType,
-        contentLength: media.contentLength,
-        savedBytes: files.bytes,
-      },
-      files,
-      transcript,
-    };
-  } catch (error) {
-    const subtitle = await ocrDouyinSubtitles(url);
-    return {
-      ok: true,
-      sourceUrl: url,
-      awemeId,
-      method: "subtitle-ocr",
-      media: null,
-      files: null,
-      transcript: subtitle.transcript,
-      subtitleFrames: subtitle.frames || [],
-      fallbackError: error.message || "音频流提取失败，已改为字幕识别",
-    };
-  }
-}
-
-async function ocrDouyinSubtitles(url) {
-  const browser = await getBrowser();
-  const context = await browser.newContext({
-    locale: "zh-CN",
-    viewport: { width: 1365, height: 900 },
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
-  });
-  const page = await context.newPage();
-  const frames = [];
-  page.on("dialog", async (dialog) => {
-    try {
-      await dialog.dismiss();
-    } catch {}
-  });
-  try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(1500);
-    await dismissDouyinLoginWall(page);
-    await startDouyinPlayback(page);
-    await page.waitForTimeout(1500);
-    await captureSubtitleFrames(page, frames);
-    if (frames.length < 2) {
-      await page.waitForTimeout(1500);
-      await captureSubtitleFrames(page, frames);
-    }
-  } finally {
-    await context.close();
-  }
-
-  if (!frames.length) {
-    throw new Error("没有识别到可用字幕画面");
-  }
-
-  const subtitleText = await transcribeSubtitleFrames(frames);
-  const cleaned = cleanText(subtitleText);
-  if (cleaned.length < 20) {
-    throw new Error("字幕识别结果过短，未能提取到有效文案");
-  }
-
-  return {
-    ok: true,
-    sourceUrl: url,
-    method: "subtitle-ocr",
-    transcript: {
-      text: cleaned,
-      model: "rapidocr-onnxruntime",
-      segments: [],
-      duration: 0,
-    },
-    frames,
-  };
-}
-
-async function captureSubtitleFrames(page, frames) {
-  const viewport = page.viewportSize() || { width: 1365, height: 900 };
-  const shot = await page.screenshot({
-    clip: {
-      x: 0,
-      y: Math.floor(viewport.height * 0.42),
-      width: viewport.width,
-      height: Math.ceil(viewport.height * 0.58),
-    },
-  });
-  await ensureMediaDir();
-  const baseName = `douyin_subtitle_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  const pngPath = join(mediaDir, `${baseName}.png`);
-  await writeFile(pngPath, shot);
-  frames.push(pngPath);
-}
-
-async function transcribeSubtitleFrames(framePaths) {
-  const scriptPath = join(root, "ocr_subtitles.py");
-  const outputPath = join(mediaDir, `ocr_${Date.now()}_${Math.random().toString(16).slice(2)}.json`);
-  await runCommand(pythonCommand, [scriptPath, outputPath, ...framePaths], {
-    cwd: root,
-    env: { ...process.env, PYTHONIOENCODING: "utf-8" },
-  });
-  const payload = JSON.parse(await readFile(outputPath, "utf8"));
-  return payload.text || "";
 }
 
 async function fetchPage(url) {
@@ -997,56 +375,13 @@ async function renderTextPage(url) {
 async function extractUrlContent(url, timing = createTiming(), onProgress = () => {}) {
   if (!url) throw new Error("缺少链接");
 
-  if (/douyin\.com/i.test(url)) {
-    onProgress("读取抖音页面信息");
-    const [douyin, rendered] = await timedStep(timing, "douyin-page-metadata", async () =>
-      Promise.all([fetchDouyinMetadata(url), renderDouyinPage(url)])
-    );
-    const result = rendered || douyin || { title: "", text: "", sourceUrl: url, extractor: "douyin-asr" };
-
-    onProgress("提取音频并转写逐字稿");
-    let transcription;
-    let fullTranscript = "";
-    let transcriptSource = "audio";
-    try {
-      transcription = await timedStep(timing, "douyin-asr-transcribe", () => transcribeDouyin(url));
-      fullTranscript = cleanText(transcription.transcript?.text || "");
-    } catch (error) {
-      timing.steps.push({ name: "douyin-asr-failed", ms: 0, ok: false, error: error.message });
-      onProgress("音频失败，改为识别字幕");
-      const subtitle = await timedStep(timing, "douyin-subtitle-ocr", () => ocrDouyinSubtitles(url));
-      transcription = subtitle;
-      fullTranscript = cleanText(subtitle.transcript?.text || "");
-      transcriptSource = "subtitle-ocr";
-    }
-    if (fullTranscript.length < 20) {
-      throw new Error("逐字稿内容过短，未能提取到有效文案");
-    }
-
-    return {
-      ...result,
-      text: fullTranscript,
-      fullTranscript,
-      transcriptMeta: {
-        source: transcriptSource,
-        model: transcription.transcript?.model || whisperModel,
-        duration: transcription.transcript?.duration || 0,
-        segments: transcription.transcript?.segments?.length || 0,
-        media: transcription.media,
-        frames: transcription.frames?.length || 0,
-      },
-      sourceType: "douyin",
-      timing,
-    };
-  }
-
   onProgress("读取网页正文");
   let html;
   try {
     html = await timedStep(timing, "fetch-page", () => fetchPage(url));
   } catch (error) {
     timing.steps.push({ name: "fetch-page-failed", ms: 0, ok: false, error: error.message });
-    onProgress("????????????");
+    onProgress("页面抓取失败，改用浏览器读取");
     html = await timedStep(timing, "render-page", () => renderTextPage(url));
   }
   const title = extractTitle(html);
@@ -1064,7 +399,6 @@ async function extractUrlContent(url, timing = createTiming(), onProgress = () =
     timing,
   };
 }
-
 async function handleExtract(req, res) {
   const timing = createTiming();
   try {
@@ -1193,13 +527,12 @@ function handleJobStatus(req, res, pathname) {
   });
 }
 
-function buildDynamicViewpointPrompt({ sourceText, sourceType, transcriptMeta }) {
-  const isTranscript = sourceType === "douyin" || sourceType === "social" || transcriptMeta?.source === "faster-whisper";
-  const typeLabel = isTranscript ? "短视频口播逐字稿" : sourceType === "page" ? "网页文章" : "粘贴正文";
+function buildDynamicViewpointPrompt({ sourceText, sourceType }) {
+  const typeLabel = sourceType === "page" ? "网页文章" : "粘贴正文";
   return [
     `素材类型：${typeLabel}`,
     "",
-    "请先在内部完成 ASR 转写纠错，再把素材提炼成知识总结卡片。",
+    "请把素材提炼成知识总结卡片。",
     "只输出 JSON，不要输出 Markdown。",
     "JSON 必须包含 coreKnowledge、caseText、category 三个字段。",
     "",
@@ -1216,7 +549,7 @@ function buildDynamicViewpointPrompt({ sourceText, sourceType, transcriptMeta })
     "- 每个观点必须是提炼后的结论，不要复制逐字稿长句。",
     "",
     "纠错和清洗要求：",
-    "- 纠正明显 ASR 错字、同音词、断句问题和概念误写。",
+    "- 纠正明显错字、同音词、断句问题和概念误写。",
     "- 删除口水词、重复句、情绪化表达、引流话术、互动话术和平台噪声。",
     "- 不要凭空添加素材没有的信息。",
     "- 语言简洁、直接、结构清晰。",
@@ -1470,7 +803,7 @@ async function handleKimiRefine(req, res) {
         messages: [
           {
             role: "system",
-            content: "你是知识提炼助手，擅长纠正中文口播 ASR 错字，并把内容去情绪化、去营销化，压缩成可复用知识卡片。",
+            content: "你是知识提炼助手，擅长把网页文章和正文压缩成去情绪化、去营销化的知识卡片。",
           },
           {
             role: "user",
@@ -1586,21 +919,6 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (req.method === "POST" && url.pathname === "/api/douyin/transcribe") {
-    try {
-      const body = await readJsonBody(req);
-      const target = String(body.url || "").trim();
-      if (!target) {
-        send(res, 400, { error: "缺少链接" });
-        return;
-      }
-      send(res, 200, await transcribeDouyin(target));
-    } catch (error) {
-      send(res, 500, { error: error.message || "转写失败" });
-    }
-    return;
-  }
-
   if (req.method === "POST" && url.pathname === "/api/kimi/refine") {
     await handleKimiRefine(req, res);
     return;
@@ -1627,3 +945,5 @@ const server = createServer(async (req, res) => {
 server.listen(port, "0.0.0.0", () => {
   console.log(`INTJ knowledge app running at http://0.0.0.0:${port}`);
 });
+
+
