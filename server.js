@@ -1035,7 +1035,14 @@ async function extractUrlContent(url, timing = createTiming(), onProgress = () =
   }
 
   onProgress("读取网页正文");
-  const html = await timedStep(timing, "fetch-page", () => fetchPage(url));
+  let html;
+  try {
+    html = await timedStep(timing, "fetch-page", () => fetchPage(url));
+  } catch (error) {
+    timing.steps.push({ name: "fetch-page-failed", ms: 0, ok: false, error: error.message });
+    onProgress("????????????");
+    html = await timedStep(timing, "render-page", () => renderTextPage(url));
+  }
   const title = extractTitle(html);
   const description = extractMeta(html, "description") || extractMeta(html, "og:description");
   const text = stripHtml(html);
