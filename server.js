@@ -798,24 +798,40 @@ async function transcribeAudio(wavPath) {
 
 async function transcribeDouyin(url) {
   const awemeId = getDouyinAwemeId(url);
-  const mediaCandidates = await captureDouyinMedia(url);
-  const media = mediaCandidates.find((item) => item.kind === "audio") || mediaCandidates[0];
-  if (!media) throw new Error("没有捕获到视频音频流，请确认该抖音链接可以在网页端播放。");
-  const files = await downloadMedia(media, url, awemeId);
-  const transcript = await transcribeAudio(files.wavPath);
-  return {
-    ok: true,
-    sourceUrl: url,
-    awemeId,
-    media: {
-      kind: media.kind,
-      contentType: media.contentType,
-      contentLength: media.contentLength,
-      savedBytes: files.bytes,
-    },
-    files,
-    transcript,
-  };
+  try {
+    const mediaCandidates = await captureDouyinMedia(url);
+    const media = mediaCandidates.find((item) => item.kind === "audio") || mediaCandidates[0];
+    if (!media) throw new Error("没有捕获到视频音频流，请确认该抖音链接可以在网页端播放。");
+    const files = await downloadMedia(media, url, awemeId);
+    const transcript = await transcribeAudio(files.wavPath);
+    return {
+      ok: true,
+      sourceUrl: url,
+      awemeId,
+      method: "audio-asr",
+      media: {
+        kind: media.kind,
+        contentType: media.contentType,
+        contentLength: media.contentLength,
+        savedBytes: files.bytes,
+      },
+      files,
+      transcript,
+    };
+  } catch (error) {
+    const subtitle = await ocrDouyinSubtitles(url);
+    return {
+      ok: true,
+      sourceUrl: url,
+      awemeId,
+      method: "subtitle-ocr",
+      media: null,
+      files: null,
+      transcript: subtitle.transcript,
+      subtitleFrames: subtitle.frames || [],
+      fallbackError: error.message || "音频流提取失败，已改为字幕识别",
+    };
+  }
 }
 
 async function ocrDouyinSubtitles(url) {
