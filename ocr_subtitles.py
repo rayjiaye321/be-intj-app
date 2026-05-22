@@ -4,6 +4,21 @@ from pathlib import Path
 
 from rapidocr_onnxruntime import RapidOCR
 
+NOISE_PATTERNS = (
+    "登录",
+    "验证",
+    "取消",
+    "关闭",
+    "稍后",
+    "以后再说",
+    "下次再说",
+    "暂不",
+    "我知道了",
+    "抖音",
+    "打开 App",
+    "打开app",
+)
+
 
 def extract_text(ocr, image_path: Path) -> str:
     result, _ = ocr(str(image_path))
@@ -14,7 +29,7 @@ def extract_text(ocr, image_path: Path) -> str:
       if not item or len(item) < 2:
         continue
       text = str(item[1]).strip()
-      if text:
+      if text and not any(pattern in text for pattern in NOISE_PATTERNS):
         lines.append(text)
     return "\n".join(lines)
 

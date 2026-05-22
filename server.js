@@ -890,7 +890,15 @@ async function ocrDouyinSubtitles(url) {
 }
 
 async function captureSubtitleFrames(page, frames) {
-  const shot = await page.screenshot({ fullPage: false });
+  const viewport = page.viewportSize() || { width: 1365, height: 900 };
+  const shot = await page.screenshot({
+    clip: {
+      x: 0,
+      y: Math.floor(viewport.height * 0.42),
+      width: viewport.width,
+      height: Math.ceil(viewport.height * 0.58),
+    },
+  });
   await ensureMediaDir();
   const baseName = `douyin_subtitle_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const pngPath = join(mediaDir, `${baseName}.png`);
