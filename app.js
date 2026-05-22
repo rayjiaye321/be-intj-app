@@ -185,7 +185,11 @@ function normalizeBackendSourceType(type) {
 
 async function readJsonResponse(response) {
   const raw = await response.text();
-  return raw ? JSON.parse(raw) : {};
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    throw new Error(`服务器返回了不可解析内容：${raw.slice(0, 120) || response.status}`);
+  }
 }
 
 function formatMs(ms = 0) {
@@ -196,26 +200,52 @@ function formatMs(ms = 0) {
 
 function formatTiming(timing) {
   if (!timing?.steps?.length) return "";
-  const steps = timing.steps.map((step) => `${step.name} ${formatMs(step.ms)}`).join(" / ");
+  const steps = timing.steps.map((step) => `${step.name}${step.ok === false ? "失败" : ""} ${formatMs(step.ms)}`).join(" / ");
   return `耗时：${steps} / total ${formatMs(timing.totalMs)}`;
 }
 
+function formatFailureDetail(payload, fallbackMessage) {
+  const parts = [payload?.error || fallbackMessage].filter(Boolean);
+  const timingText = formatTiming(payload?.timing);
+  if (timingText) parts.push(timingText);
+  const failedStep = payload?.timing?.steps?.find((step) => step.ok === false);
+  if (failedStep?.error && failedStep.error !== payload?.error) parts.push(`失败阶段：${failedStep.name}，${failedStep.error}`);
+  return parts.join("；");
+}
+
+function normalizeFetchError(error, fallbackMessage) {
+  if (error instanceof TypeError && /fetch/i.test(error.message || "")) {
+    return new Error(`${fallbackMessage}：浏览器没有连到服务器。请检查手机网络、服务器是否在线、页面是否仍是 http://43.139.101.97。`);
+  }
+  return error;
+}
+
 async function fetchReadableText(url) {
-  const startResponse = await fetch("/api/extract/jobs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
-  });
+  let startResponse;
+  try {
+    startResponse = await fetch("/api/extract/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+  } catch (error) {
+    throw normalizeFetchError(error, "无法启动链接提取任务");
+  }
   const startPayload = await readJsonResponse(startResponse);
-  if (!startResponse.ok) throw new Error(startPayload.error || "无法启动链接提取任务");
+  if (!startResponse.ok) throw new Error(formatFailureDetail(startPayload, "无法启动链接提取任务"));
   if (!startPayload.jobId) throw new Error("链接提取任务没有返回任务编号");
 
   const startedAt = Date.now();
   while (Date.now() - startedAt < 20 * 60 * 1000) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    const statusResponse = await fetch(`/api/jobs/${encodeURIComponent(startPayload.jobId)}`);
+    let statusResponse;
+    try {
+      statusResponse = await fetch(`/api/jobs/${encodeURIComponent(startPayload.jobId)}`);
+    } catch (error) {
+      throw normalizeFetchError(error, "无法读取链接提取进度");
+    }
     const statusPayload = await readJsonResponse(statusResponse);
-    if (!statusResponse.ok) throw new Error(statusPayload.error || "无法读取任务状态");
+    if (!statusResponse.ok) throw new Error(formatFailureDetail(statusPayload, "无法读取任务状态"));
     if (statusPayload.message) {
       elements.importHint.textContent = `${statusPayload.message}，已等待 ${formatMs(Date.now() - startedAt)}`;
     }
@@ -228,7 +258,7 @@ async function fetchReadableText(url) {
       };
     }
     if (statusPayload.status === "error") {
-      throw new Error(statusPayload.error || "链接提取失败");
+      throw new Error(formatFailureDetail(statusPayload, "链接提取失败"));
     }
   }
 
@@ -237,18 +267,23 @@ async function fetchReadableText(url) {
 
 async function refineWithKimi(sourceText, sourceUrl, sourceType, metadata = {}) {
   const startedAt = Date.now();
-  const response = await fetch("/api/kimi/refine", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sourceText,
-      sourceUrl,
-      sourceType,
-      transcriptMeta: metadata.transcriptMeta || null,
-    }),
-  });
+  let response;
+  try {
+    response = await fetch("/api/kimi/refine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceText,
+        sourceUrl,
+        sourceType,
+        transcriptMeta: metadata.transcriptMeta || null,
+      }),
+    });
+  } catch (error) {
+    throw normalizeFetchError(error, "无法调用 Kimi 提炼接口");
+  }
   const payload = await readJsonResponse(response);
-  if (!response.ok) throw new Error(payload.error || "Kimi 不可用或调用失败");
+  if (!response.ok) throw new Error(formatFailureDetail(payload, "Kimi 不可用或调用失败"));
   if (!isUsableCard(payload.card)) throw new Error("Kimi 返回内容缺少卡片字段");
   return {
     ...normalizeCard(payload.card),
