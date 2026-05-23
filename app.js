@@ -523,16 +523,20 @@ function getCardListTitle(card) {
   return core.split(/\r?\n/).find(Boolean)?.trim() || card.category || "未命名卡片";
 }
 
-function renderCardList(target, cards) {
+function renderCardList(target, cards, options = {}) {
+  const { canDelete = false } = options;
   target.innerHTML = cards
     .map(
       (card) => `
       <article class="card-item compact-card" data-id="${card.id}">
         <button type="button" data-action="edit" data-id="${card.id}" class="card-open-btn">
           <span class="card-list-title">${escapeHtml(getCardListTitle(card))}</span>
-          <span class="category-pill">${escapeHtml(card.category)}</span>
         </button>
-        <button type="button" data-action="delete" data-id="${card.id}" class="card-delete-btn" aria-label="删除卡片" title="删除">×</button>
+        ${
+          canDelete
+            ? `<button type="button" data-action="delete" data-id="${card.id}" class="card-delete-btn" aria-label="删除卡片" title="删除">×</button>`
+            : ""
+        }
       </article>
     `
     )
@@ -551,7 +555,7 @@ function renderSearchCards() {
 function renderOrganizeCards() {
   elements.cardCount.textContent = `${state.cards.length} 张`;
   elements.organizeEmptyState.style.display = state.cards.length === 0 ? "block" : "none";
-  renderCardList(elements.organizeCardsList, state.cards);
+  renderCardList(elements.organizeCardsList, state.cards, { canDelete: true });
 }
 
 function renderAllCardViews() {
