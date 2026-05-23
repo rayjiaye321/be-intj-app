@@ -38,12 +38,19 @@ const elements = {
   exportBtn: document.getElementById("exportBtn"),
   importBtn: document.getElementById("importBtn"),
   clearAllBtn: document.getElementById("clearAllBtn"),
+  renameCategoryFrom: document.getElementById("renameCategoryFrom"),
+  renameCategoryTo: document.getElementById("renameCategoryTo"),
+  renameCategoryBtn: document.getElementById("renameCategoryBtn"),
   cardsList: document.getElementById("cardsList"),
   organizeCardsList: document.getElementById("organizeCardsList"),
   emptyState: document.getElementById("emptyState"),
   organizeEmptyState: document.getElementById("organizeEmptyState"),
   cardCount: document.getElementById("cardCount"),
   networkBadge: document.getElementById("networkBadge"),
+  backupStatus: document.getElementById("backupStatus"),
+  createServerBackupBtn: document.getElementById("createServerBackupBtn"),
+  refreshBackupsBtn: document.getElementById("refreshBackupsBtn"),
+  serverBackupsList: document.getElementById("serverBackupsList"),
   saveBtn: document.getElementById("saveBtn"),
   toast: document.getElementById("toast"),
 };
@@ -123,6 +130,7 @@ function switchView(view) {
   if (view !== "settings") elements.kimiApiKey.value = "";
   if (view === "search") renderSearchCards();
   if (view === "organize") renderOrganizeCards();
+  if (view === "settings") refreshServerBackups().catch(() => {});
 }
 
 function loadCards() {
@@ -243,6 +251,15 @@ async function mergeCardsToServer(cards) {
     body: JSON.stringify({ cards }),
   });
   state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
+}
+
+async function renameCategoryOnServer(from, to) {
+  const payload = await apiJson("/api/cards/categories/rename", {
+    method: "POST",
+    body: JSON.stringify({ from, to }),
+  });
+  state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
+  return payload.changed || 0;
 }
 
 function isUsableCard(card) {
@@ -611,6 +628,12 @@ function renderCategoryOptions() {
     .join("");
   elements.categoryFilter.innerHTML = options;
   elements.categoryFilter.value = categories.includes(current) || current === "" ? current : "";
+
+  const renameCurrent = elements.renameCategoryFrom.value;
+  elements.renameCategoryFrom.innerHTML = ['<option value="">选择分类</option>']
+    .concat(categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`))
+    .join("");
+  elements.renameCategoryFrom.value = categories.includes(renameCurrent) ? renameCurrent : "";
 }
 
 function applyFilters(cards) {
@@ -671,6 +694,69 @@ function renderAllCardViews() {
   renderCategoryOptions();
   renderSearchCards();
   renderOrganizeCards();
+}
+
+function formatBackupTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value || "-";
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function renderServerBackups(backups = []) {
+  if (!backups.length) {
+    elements.backupStatus.textContent = "暂无服务端备份。";
+    elements.serverBackupsList.innerHTML = "";
+    return;
+  }
+  elements.backupStatus.textContent = `已有 ${backups.length} 份服务端备份，最多保留 20 份。`;
+  elements.serverBackupsList.innerHTML = backups
+    .map(
+      (backup) => `
+      <article class="backup-item">
+        <div>
+          <strong>${escapeHtml(formatBackupTime(backup.createdAt))}</strong>
+          <span>${escapeHtml(backup.reason || "manual")} · ${Number(backup.count || 0)} 张</span>
+        </div>
+        <button type="button" class="pixel-btn restore-backup-btn" data-backup-id="${escapeHtml(backup.id)}">恢复</button>
+      </article>
+    `
+    )
+    .join("");
+}
+
+async function refreshServerBackups() {
+  const payload = await apiJson("/api/backups");
+  renderServerBackups(payload.backups || []);
+}
+
+async function createServerBackup() {
+  elements.createServerBackupBtn.disabled = true;
+  try {
+    const payload = await apiJson("/api/backups", { method: "POST", body: JSON.stringify({}) });
+    renderServerBackups(payload.backups || []);
+    showToast(`已备份 ${payload.backup?.count ?? state.cards.length} 张卡片`);
+  } catch (error) {
+    showToast(error.message || "备份失败");
+  } finally {
+    elements.createServerBackupBtn.disabled = false;
+  }
+}
+
+async function restoreServerBackup(backupId) {
+  if (!window.confirm("恢复该服务端备份？当前卡片库会先自动备份，然后被备份内容覆盖。")) return;
+  try {
+    const payload = await apiJson(`/api/backups/${encodeURIComponent(backupId)}/restore`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
+    persistCards();
+    renderAllCardViews();
+    renderServerBackups(payload.backups || []);
+    showToast("备份已恢复");
+  } catch (error) {
+    showToast(error.message || "恢复失败");
+  }
 }
 
 function updateNetworkStatus() {
@@ -802,6 +888,39 @@ async function deleteCard(id) {
     showToast(error.message || "删除失败");
   }
 }
+
+async function renameCategory() {
+  const from = elements.renameCategoryFrom.value.trim();
+  const to = elements.renameCategoryTo.value.trim();
+  if (!from || !to) {
+    showToast("请填写原分类和新分类");
+    return;
+  }
+  if (from === to) {
+    showToast("新旧分类相同");
+    return;
+  }
+  const count = state.cards.filter((card) => card.category === from).length;
+  if (!count) {
+    showToast("该分类下没有卡片");
+    return;
+  }
+  if (!window.confirm(`把“${from}”下的 ${count} 张卡片改为“${to}”？操作前会自动备份。`)) return;
+  elements.renameCategoryBtn.disabled = true;
+  try {
+    const changed = await renameCategoryOnServer(from, to);
+    persistCards();
+    renderAllCardViews();
+    elements.renameCategoryTo.value = "";
+    await refreshServerBackups().catch(() => {});
+    showToast(`已更新 ${changed} 张卡片`);
+  } catch (error) {
+    showToast(error.message || "分类改名失败");
+  } finally {
+    elements.renameCategoryBtn.disabled = false;
+  }
+}
+
 function handleListClick(event) {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
@@ -810,6 +929,12 @@ function handleListClick(event) {
   if (!card) return;
   if (action === "edit") fillFormFromCard(card);
   if (action === "delete") void deleteCard(id);
+}
+
+function handleBackupListClick(event) {
+  const button = event.target.closest("button[data-backup-id]");
+  if (!button) return;
+  void restoreServerBackup(button.dataset.backupId);
 }
 
 function syncFilters() {
@@ -869,6 +994,12 @@ elements.cancelEditBtn.addEventListener("click", resetForm);
 elements.exportBtn.addEventListener("click", exportBackup);
 elements.importBtn.addEventListener("click", importBackupFile);
 elements.clearAllBtn.addEventListener("click", clearAllCards);
+elements.renameCategoryBtn.addEventListener("click", () => void renameCategory());
+elements.createServerBackupBtn.addEventListener("click", () => void createServerBackup());
+elements.refreshBackupsBtn.addEventListener("click", () =>
+  refreshServerBackups().catch((error) => showToast(error.message || "读取备份失败"))
+);
+elements.serverBackupsList.addEventListener("click", handleBackupListClick);
 elements.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   await saveCurrentCard();

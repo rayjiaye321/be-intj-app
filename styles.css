@@ -280,6 +280,10 @@ body .view-panel.active {
   padding-top: 12px;
 }
 
+.compact-section {
+  margin-bottom: 12px;
+}
+
 .settings-grid .field input {
   background: #fdf9ea;
 }
@@ -316,6 +320,48 @@ body .view-panel.active {
 
 .backup-row {
   margin-bottom: 12px;
+}
+
+.rename-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.backup-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.backup-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  border: 3px solid var(--line);
+  background: #fffef2;
+  padding: 8px;
+}
+
+.backup-item strong,
+.backup-item span {
+  display: block;
+}
+
+.backup-item strong {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.backup-item span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+.restore-backup-btn {
+  min-height: 36px;
+  padding: 0.45rem 0.55rem;
 }
 
 .empty-state {

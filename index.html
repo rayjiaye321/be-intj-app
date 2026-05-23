@@ -169,6 +169,28 @@
               <button type="button" id="clearAllBtn" class="danger-ghost-btn">清空全部</button>
             </div>
 
+            <section class="settings-box compact-section" aria-label="分类整理">
+              <div class="settings-head">
+                <div>
+                  <h3>分类改名</h3>
+                  <p>把某个分类下的全部卡片移动到新分类。</p>
+                </div>
+              </div>
+              <div class="rename-grid">
+                <label class="field">
+                  <span>原分类</span>
+                  <select id="renameCategoryFrom">
+                    <option value="">选择分类</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>新分类</span>
+                  <input id="renameCategoryTo" type="text" placeholder="新的分类名称" />
+                </label>
+                <button type="button" id="renameCategoryBtn" class="pixel-btn">批量改名</button>
+              </div>
+            </section>
+
             <div id="organizeEmptyState" class="empty-state">还没有卡片。</div>
             <div id="organizeCardsList" class="cards-list" aria-live="polite"></div>
           </div>
@@ -213,6 +235,21 @@
                   <button type="button" id="clearKimiBtn" class="danger-ghost-btn">清空 Key</button>
                 </div>
               </div>
+            </section>
+
+            <section class="settings-box" aria-label="服务端备份">
+              <div class="settings-head">
+                <div>
+                  <h3>服务端备份</h3>
+                  <p>删除、清空和批量改分类前会自动备份；这里可以手动创建或恢复。</p>
+                </div>
+              </div>
+              <div class="button-row settings-actions">
+                <button type="button" id="createServerBackupBtn" class="pixel-btn">立即备份</button>
+                <button type="button" id="refreshBackupsBtn" class="pixel-btn">刷新列表</button>
+              </div>
+              <p id="backupStatus" class="pixel-hint">等待读取备份。</p>
+              <div id="serverBackupsList" class="backup-list"></div>
             </section>
           </div>
         </section>

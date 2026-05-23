@@ -7,7 +7,7 @@
     "start": "node server.js",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "guide": "start DEPLOYMENT_GUIDE.md",
-    "check": "node --check server.js && node --check app.js && node --check sw.js"
+    "check": "node --check server.js && node --check app.js && node --check sw.js && node scripts/self-check.mjs"
   },
   "engines": {
     "node": ">=20"

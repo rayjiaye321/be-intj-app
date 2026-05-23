@@ -1,6 +1,6 @@
 ﻿import { createServer } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, readdir, unlink } from "node:fs/promises";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { extname, join, normalize } from "node:path";
 import { chromium } from "playwright";
@@ -10,9 +10,10 @@ loadEnvFile();
 
 const port = Number(process.env.PORT || 4173);
 const appPassword = process.env.APP_PASSWORD || (process.env.NODE_ENV === "production" ? "" : "123456");
-const dataDir = join(root, "data");
+const dataDir = process.env.BE_INTJ_DATA_DIR ? normalize(process.env.BE_INTJ_DATA_DIR) : join(root, "data");
 const serverSettingsPath = join(dataDir, "server-settings.json");
 const cardsPath = join(dataDir, "cards.json");
+const backupsDir = join(dataDir, "backups");
 const defaultKimiSettings = {
   kimiApiKey: process.env.KIMI_API_KEY || "",
   kimiBaseUrl: process.env.KIMI_BASE_URL || "https://api.moonshot.cn/v1",
@@ -21,11 +22,13 @@ const defaultKimiSettings = {
 let runtimeServerSettings = { ...defaultKimiSettings };
 const maxBodyBytes = 5 * 1024 * 1024;
 const maxPageBytes = 2 * 1024 * 1024;
+const maxBackupFiles = 20;
 let sharedBrowser = null;
 const jobs = new Map();
 const jobTtlMs = 30 * 60 * 1000;
 const sessions = new Map();
 const sessionTtlMs = 7 * 24 * 60 * 60 * 1000;
+let lastDailyBackupDate = "";
 
 loadServerSettings();
 
@@ -130,6 +133,79 @@ async function saveCardsStore(cards) {
     "utf8"
   );
   return normalized;
+}
+
+function backupTimestamp() {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+async function listCardBackups() {
+  await mkdir(backupsDir, { recursive: true });
+  const files = await readdir(backupsDir).catch(() => []);
+  const backups = [];
+  for (const file of files) {
+    if (!/^cards-\d{4}-\d{2}-\d{2}T.*\.json$/.test(file)) continue;
+    try {
+      const raw = await readFile(join(backupsDir, file), "utf8");
+      const parsed = JSON.parse(raw);
+      const cards = Array.isArray(parsed.cards) ? parsed.cards : [];
+      backups.push({
+        id: file,
+        createdAt: parsed.backedUpAt || parsed.updatedAt || file.replace(/^cards-/, "").replace(/\.json$/, ""),
+        reason: parsed.reason || "manual",
+        count: cards.length,
+      });
+    } catch {
+      backups.push({ id: file, createdAt: file.replace(/^cards-/, "").replace(/\.json$/, ""), reason: "unknown", count: 0 });
+    }
+  }
+  return backups.sort((a, b) => String(b.id).localeCompare(String(a.id)));
+}
+
+async function pruneCardBackups() {
+  const backups = await listCardBackups();
+  const extra = backups.slice(maxBackupFiles);
+  await Promise.all(extra.map((backup) => unlink(join(backupsDir, backup.id)).catch(() => {})));
+}
+
+async function createCardsBackup(reason = "manual") {
+  const cards = await loadCardsStore();
+  await mkdir(backupsDir, { recursive: true });
+  const backup = {
+    version: 1,
+    reason,
+    backedUpAt: new Date().toISOString(),
+    count: cards.length,
+    cards,
+  };
+  const filename = `cards-${backupTimestamp()}.json`;
+  await writeFile(join(backupsDir, filename), JSON.stringify(backup, null, 2), "utf8");
+  await pruneCardBackups();
+  return { id: filename, createdAt: backup.backedUpAt, reason, count: cards.length };
+}
+
+async function ensureDailyCardsBackup() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (lastDailyBackupDate === today) return null;
+  const cards = await loadCardsStore();
+  if (cards.length === 0) {
+    lastDailyBackupDate = today;
+    return null;
+  }
+  lastDailyBackupDate = today;
+  return createCardsBackup("daily-auto");
+}
+
+async function restoreCardsBackup(backupId) {
+  if (!/^cards-\d{4}-\d{2}-\d{2}T.*\.json$/.test(backupId || "")) {
+    throw new Error("备份编号无效");
+  }
+  const raw = await readFile(join(backupsDir, backupId), "utf8");
+  const parsed = JSON.parse(raw);
+  const sourceCards = Array.isArray(parsed.cards) ? parsed.cards : [];
+  await createCardsBackup("before-restore");
+  const cards = await saveCardsStore(sourceCards);
+  return cards;
 }
 
 function mergeCards(existing, incoming) {
@@ -542,6 +618,7 @@ function handleLogout(req, res) {
 
 async function handleCardsList(req, res) {
   try {
+    await ensureDailyCardsBackup();
     const cards = await loadCardsStore();
     send(res, 200, { cards });
   } catch (error) {
@@ -589,6 +666,7 @@ async function handleCardDelete(req, res, pathname) {
       return;
     }
     const existing = await loadCardsStore();
+    if (existing.some((card) => card.id === id)) await createCardsBackup("before-delete");
     const cards = await saveCardsStore(existing.filter((card) => card.id !== id));
     send(res, 200, { cards });
   } catch (error) {
@@ -598,10 +676,73 @@ async function handleCardDelete(req, res, pathname) {
 
 async function handleCardsClear(req, res) {
   try {
+    const existing = await loadCardsStore();
+    if (existing.length > 0) await createCardsBackup("before-clear");
     const cards = await saveCardsStore([]);
     send(res, 200, { cards });
   } catch (error) {
     send(res, 500, { error: error.message || "清空卡片库失败" });
+  }
+}
+
+async function handleCardsCategoryRename(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const from = String(body.from || "").trim();
+    const to = String(body.to || "").trim();
+    if (!from || !to) {
+      send(res, 400, { error: "请填写原分类和新分类" });
+      return;
+    }
+    if (from === to) {
+      const cards = await loadCardsStore();
+      send(res, 200, { cards, changed: 0 });
+      return;
+    }
+    const existing = await loadCardsStore();
+    const changed = existing.filter((card) => card.category === from).length;
+    if (changed === 0) {
+      send(res, 404, { error: "没有找到该分类下的卡片" });
+      return;
+    }
+    await createCardsBackup("before-category-rename");
+    const now = new Date().toISOString();
+    const cards = await saveCardsStore(
+      existing.map((card) => (card.category === from ? { ...card, category: to, updatedAt: now } : card))
+    );
+    send(res, 200, { cards, changed });
+  } catch (error) {
+    send(res, 500, { error: error.message || "分类整理失败" });
+  }
+}
+
+async function handleBackupsList(req, res) {
+  try {
+    const backups = await listCardBackups();
+    send(res, 200, { backups });
+  } catch (error) {
+    send(res, 500, { error: error.message || "读取备份失败" });
+  }
+}
+
+async function handleBackupCreate(req, res) {
+  try {
+    const backup = await createCardsBackup("manual");
+    const backups = await listCardBackups();
+    send(res, 200, { backup, backups });
+  } catch (error) {
+    send(res, 500, { error: error.message || "创建备份失败" });
+  }
+}
+
+async function handleBackupRestore(req, res, pathname) {
+  try {
+    const backupId = decodeURIComponent(pathname.split("/").slice(-2, -1)[0] || "");
+    const cards = await restoreCardsBackup(backupId);
+    const backups = await listCardBackups();
+    send(res, 200, { cards, backups });
+  } catch (error) {
+    send(res, 500, { error: error.message || "恢复备份失败" });
   }
 }
 
@@ -1061,6 +1202,11 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/cards/categories/rename") {
+    await handleCardsCategoryRename(req, res);
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/cards") {
     await handleCardSave(req, res);
     return;
@@ -1073,6 +1219,21 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "DELETE" && url.pathname === "/api/cards") {
     await handleCardsClear(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/backups") {
+    await handleBackupsList(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/backups") {
+    await handleBackupCreate(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname.startsWith("/api/backups/") && url.pathname.endsWith("/restore")) {
+    await handleBackupRestore(req, res, url.pathname);
     return;
   }
 
