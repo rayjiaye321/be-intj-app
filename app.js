@@ -1,4 +1,4 @@
-const STORAGE_KEY = "intj-knowledge-cards-v1";
+﻿const STORAGE_KEY = "intj-knowledge-cards-v1";
 
 const elements = {
   lockScreen: document.getElementById("lockScreen"),
@@ -90,6 +90,7 @@ async function unlockApp() {
   elements.appShell.classList.remove("locked");
   elements.appShell.removeAttribute("aria-hidden");
   await refreshServerStatus();
+  await syncCardsFromServer({ mergeLocal: true });
   switchView("new");
 }
 
@@ -134,6 +135,73 @@ function loadCards() {
 
 function persistCards() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.cards));
+}
+
+async function apiJson(url, options = {}) {
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    throw normalizeFetchError(error, "无法连接服务器");
+  }
+  const payload = await readJsonResponse(response);
+  if (!response.ok) throw new Error(payload.error || "服务器操作失败");
+  return payload;
+}
+
+async function syncCardsFromServer({ mergeLocal = false } = {}) {
+  const localCards = loadCards();
+  const payload =
+    mergeLocal && localCards.length > 0
+      ? await apiJson("/api/cards/merge", {
+          method: "POST",
+          body: JSON.stringify({ cards: localCards }),
+        })
+      : await apiJson("/api/cards");
+  state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
+  persistCards();
+  renderAllCardViews();
+}
+
+async function saveCardToServer(card) {
+  const payload = await apiJson("/api/cards", {
+    method: "POST",
+    body: JSON.stringify({ card }),
+  });
+  state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
+  persistCards();
+  renderAllCardViews();
+  return payload.card ? normalizeCard(payload.card) : null;
+}
+
+async function deleteCardFromServer(id) {
+  const payload = await apiJson(`/api/cards/${encodeURIComponent(id)}`, { method: "DELETE" });
+  state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
+  persistCards();
+  renderAllCardViews();
+}
+
+async function clearCardsOnServer() {
+  const payload = await apiJson("/api/cards", { method: "DELETE" });
+  state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
+  persistCards();
+  renderAllCardViews();
+}
+
+async function mergeCardsToServer(cards) {
+  const payload = await apiJson("/api/cards/merge", {
+    method: "POST",
+    body: JSON.stringify({ cards }),
+  });
+  state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
+  persistCards();
+  renderAllCardViews();
 }
 
 function isUsableCard(card) {
@@ -399,7 +467,7 @@ async function extractDraft(options = {}) {
       ? `已用 Kimi 提炼《${title}》。${timingText}。请检查并确认后入库。`
       : `已用 Kimi 提炼完成。${timingText}。请检查并确认后入库。`;
 
-    if (options.autoSave) saveCurrentCard();
+    if (options.autoSave) await saveCurrentCard();
   } catch (error) {
     elements.importHint.textContent = `提炼已停止：${error.message || "Kimi 不可用或调用失败"}`;
   } finally {
@@ -414,7 +482,7 @@ function normalizeFingerprint(card) {
   return [card.coreKnowledge, card.caseText, card.category].join("::").replace(/\s+/g, "").toLowerCase();
 }
 
-function saveCurrentCard() {
+async function saveCurrentCard() {
   const draft = getCurrentDraft();
   if (!draft.coreKnowledge || !draft.caseText || !draft.category) {
     elements.importHint.textContent = "请补全核心知识点、案例和分类后再保存。";
@@ -432,35 +500,32 @@ function saveCurrentCard() {
   }
 
   const now = new Date().toISOString();
-  if (state.editingId) {
-    state.cards = state.cards.map((card) =>
-      card.id === state.editingId
-        ? {
-            ...card,
-            ...draft,
-            updatedAt: now,
-          }
-        : card
-    );
-    elements.importHint.textContent = "卡片已更新。";
-    showToast("卡片已更新");
-  } else {
-    state.cards.unshift({
-      id: uid(),
-      ...draft,
-      cleanedText: draft.coreKnowledge,
-      createdAt: now,
-      updatedAt: now,
-    });
-    elements.importHint.textContent = "卡片已入库。";
-    showToast("卡片已入库");
+  const existing = state.cards.find((card) => card.id === state.editingId);
+  const cardToSave = state.editingId
+    ? {
+        ...existing,
+        ...draft,
+        id: state.editingId,
+        updatedAt: now,
+      }
+    : {
+        id: uid(),
+        ...draft,
+        cleanedText: draft.coreKnowledge,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+  try {
+    await saveCardToServer(cardToSave);
+    elements.importHint.textContent = state.editingId ? "卡片已更新。" : "卡片已入库。";
+    showToast(state.editingId ? "卡片已更新" : "卡片已入库");
+    resetForm();
+  } catch (error) {
+    elements.importHint.textContent = `保存失败：${error.message || "服务器不可用"}`;
+    showToast("保存失败");
   }
-
-  persistCards();
-  renderAllCardViews();
-  resetForm();
 }
-
 function resetForm() {
   elements.form.reset();
   elements.coreKnowledge.value = "";
@@ -628,19 +693,7 @@ async function importBackupFile() {
       showToast("备份文件中没有可导入的卡片");
       return;
     }
-
-    const merged = [...normalized, ...state.cards];
-    const unique = [];
-    const seen = new Set();
-    for (const card of merged) {
-      const key = normalizeFingerprint(card);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      unique.push(card);
-    }
-    state.cards = unique;
-    persistCards();
-    renderAllCardViews();
+    await mergeCardsToServer(normalized);
     showToast(`已导入 ${normalized.length} 张卡片`);
   };
 
@@ -671,33 +724,37 @@ async function importBackupFile() {
       backupFileInput.click();
     });
   } catch (error) {
-    if (error.name !== "AbortError") showToast("导入失败");
+    if (error.name !== "AbortError") showToast(error.message || "导入失败");
   }
 }
 
-function clearAllCards() {
+async function clearAllCards() {
   if (state.cards.length === 0) {
     showToast("没有可清空的卡片");
     return;
   }
-  if (!window.confirm("确定清空全部卡片？该操作会删除本地全部知识库。")) return;
-  state.cards = [];
-  persistCards();
-  renderAllCardViews();
-  resetForm();
-  showToast("已清空全部卡片");
+  if (!window.confirm("确定清空全部卡片？该操作会删除服务器上的统一卡片库。")) return;
+  try {
+    await clearCardsOnServer();
+    resetForm();
+    showToast("已清空全部卡片");
+  } catch (error) {
+    showToast(error.message || "清空失败");
+  }
 }
 
-function deleteCard(id) {
+async function deleteCard(id) {
   const card = state.cards.find((item) => item.id === id);
   if (!card) return;
-  if (!window.confirm(`删除该卡片？\n\n${card.category}`)) return;
-  state.cards = state.cards.filter((item) => item.id !== id);
-  if (state.editingId === id) resetForm();
-  persistCards();
-  renderAllCardViews();
+  if (!window.confirm(`删除该卡片？\n\n${getCardListTitle(card)}`)) return;
+  try {
+    await deleteCardFromServer(id);
+    if (state.editingId === id) resetForm();
+    showToast("卡片已删除");
+  } catch (error) {
+    showToast(error.message || "删除失败");
+  }
 }
-
 function handleListClick(event) {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
@@ -705,7 +762,7 @@ function handleListClick(event) {
   const card = state.cards.find((item) => item.id === id);
   if (!card) return;
   if (action === "edit") fillFormFromCard(card);
-  if (action === "delete") deleteCard(id);
+  if (action === "delete") void deleteCard(id);
 }
 
 function syncFilters() {
@@ -718,18 +775,17 @@ function handleBackupKeyboard() {
   window.addEventListener("keydown", (event) => {
     if (!event.altKey || event.key.toLowerCase() !== "b") return;
     event.preventDefault();
-    if (event.shiftKey) clearAllCards();
+    if (event.shiftKey) void clearAllCards();
     else exportBackup();
   });
 }
 
 async function bootstrap() {
-  state.cards = loadCards();
-  renderAllCardViews();
   updateNetworkStatus();
   elements.sourceType.value = "auto";
   elements.passwordInput.focus();
   try {
+    await syncCardsFromServer();
     const response = await fetch("/api/auth/status");
     const payload = await readJsonResponse(response);
     if (response.ok && payload.authenticated) await unlockApp();
@@ -765,9 +821,9 @@ elements.cancelEditBtn.addEventListener("click", resetForm);
 elements.exportBtn.addEventListener("click", exportBackup);
 elements.importBtn.addEventListener("click", importBackupFile);
 elements.clearAllBtn.addEventListener("click", clearAllCards);
-elements.form.addEventListener("submit", (event) => {
+elements.form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  saveCurrentCard();
+  await saveCurrentCard();
 });
 elements.searchInput.addEventListener("input", syncFilters);
 elements.categoryFilter.addEventListener("change", syncFilters);
@@ -787,3 +843,5 @@ window.addEventListener("beforeinstallprompt", (event) => {
 
 handleBackupKeyboard();
 bootstrap();
+
+

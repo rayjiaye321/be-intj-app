@@ -12,13 +12,14 @@ const port = Number(process.env.PORT || 4173);
 const appPassword = process.env.APP_PASSWORD || (process.env.NODE_ENV === "production" ? "" : "123456");
 const dataDir = join(root, "data");
 const serverSettingsPath = join(dataDir, "server-settings.json");
+const cardsPath = join(dataDir, "cards.json");
 const defaultKimiSettings = {
   kimiApiKey: process.env.KIMI_API_KEY || "",
   kimiBaseUrl: process.env.KIMI_BASE_URL || "https://api.moonshot.cn/v1",
   kimiModel: process.env.KIMI_MODEL || "kimi-k2.6",
 };
 let runtimeServerSettings = { ...defaultKimiSettings };
-const maxBodyBytes = 1024 * 1024;
+const maxBodyBytes = 5 * 1024 * 1024;
 const maxPageBytes = 2 * 1024 * 1024;
 let sharedBrowser = null;
 const jobs = new Map();
@@ -77,6 +78,72 @@ function getKimiSettings() {
 async function saveServerSettings() {
   await mkdir(dataDir, { recursive: true });
   await writeFile(serverSettingsPath, JSON.stringify(runtimeServerSettings, null, 2), "utf8");
+}
+
+function makeId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `card-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function normalizeCardRecord(card = {}) {
+  const now = new Date().toISOString();
+  return {
+    id: String(card.id || makeId()),
+    sourceUrl: String(card.sourceUrl || ""),
+    sourceType: String(card.sourceType || "text"),
+    rawText: String(card.rawText || ""),
+    coreKnowledge: String(card.coreKnowledge || "").trim(),
+    caseText: String(card.caseText || "").trim(),
+    category: String(card.category || "其他").trim() || "其他",
+    cleanedText: String(card.cleanedText || card.coreKnowledge || "").trim(),
+    createdAt: String(card.createdAt || now),
+    updatedAt: String(card.updatedAt || now),
+  };
+}
+
+function isUsableCardRecord(card) {
+  return Boolean(card?.coreKnowledge && card?.caseText && card?.category);
+}
+
+function cardFingerprint(card) {
+  return [card.coreKnowledge, card.caseText, card.category].join("::").replace(/\s+/g, "").toLowerCase();
+}
+
+async function loadCardsStore() {
+  try {
+    if (!existsSync(cardsPath)) return [];
+    const raw = await readFile(cardsPath, "utf8");
+    const parsed = JSON.parse(raw);
+    const cards = Array.isArray(parsed) ? parsed : parsed.cards;
+    return (Array.isArray(cards) ? cards : []).map(normalizeCardRecord).filter(isUsableCardRecord);
+  } catch {
+    return [];
+  }
+}
+
+async function saveCardsStore(cards) {
+  await mkdir(dataDir, { recursive: true });
+  const normalized = (Array.isArray(cards) ? cards : []).map(normalizeCardRecord).filter(isUsableCardRecord);
+  await writeFile(
+    cardsPath,
+    JSON.stringify({ version: 1, updatedAt: new Date().toISOString(), cards: normalized }, null, 2),
+    "utf8"
+  );
+  return normalized;
+}
+
+function mergeCards(existing, incoming) {
+  const merged = [];
+  const byId = new Map();
+  const byFingerprint = new Set();
+  for (const card of [...incoming, ...existing].map(normalizeCardRecord).filter(isUsableCardRecord)) {
+    const fingerprint = cardFingerprint(card);
+    if (byId.has(card.id) || byFingerprint.has(fingerprint)) continue;
+    byId.set(card.id, card);
+    byFingerprint.add(fingerprint);
+    merged.push(card);
+  }
+  return merged.sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
 }
 
 function send(res, status, body, headers = {}) {
@@ -471,6 +538,71 @@ function handleLogout(req, res) {
   const token = parseCookies(req).be_intj_session;
   if (token) sessions.delete(token);
   send(res, 200, { ok: true }, { "Set-Cookie": clearSessionCookie() });
+}
+
+async function handleCardsList(req, res) {
+  try {
+    const cards = await loadCardsStore();
+    send(res, 200, { cards });
+  } catch (error) {
+    send(res, 500, { error: error.message || "读取卡片库失败" });
+  }
+}
+
+async function handleCardsMerge(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const existing = await loadCardsStore();
+    const incoming = Array.isArray(body.cards) ? body.cards : [];
+    const cards = await saveCardsStore(mergeCards(existing, incoming));
+    send(res, 200, { cards });
+  } catch (error) {
+    send(res, 500, { error: error.message || "合并卡片库失败" });
+  }
+}
+
+async function handleCardSave(req, res) {
+  try {
+    const body = await readJsonBody(req);
+    const card = normalizeCardRecord(body.card || body);
+    if (!isUsableCardRecord(card)) {
+      send(res, 400, { error: "卡片缺少核心知识点、案例或分类" });
+      return;
+    }
+    const now = new Date().toISOString();
+    const existing = await loadCardsStore();
+    const nextCard = { ...card, updatedAt: now, createdAt: card.createdAt || now };
+    const cards = existing.filter((item) => item.id !== nextCard.id && cardFingerprint(item) !== cardFingerprint(nextCard));
+    cards.unshift(nextCard);
+    const saved = await saveCardsStore(cards);
+    send(res, 200, { card: nextCard, cards: saved });
+  } catch (error) {
+    send(res, 500, { error: error.message || "保存卡片失败" });
+  }
+}
+
+async function handleCardDelete(req, res, pathname) {
+  try {
+    const id = decodeURIComponent(pathname.split("/").pop() || "");
+    if (!id) {
+      send(res, 400, { error: "缺少卡片编号" });
+      return;
+    }
+    const existing = await loadCardsStore();
+    const cards = await saveCardsStore(existing.filter((card) => card.id !== id));
+    send(res, 200, { cards });
+  } catch (error) {
+    send(res, 500, { error: error.message || "删除卡片失败" });
+  }
+}
+
+async function handleCardsClear(req, res) {
+  try {
+    const cards = await saveCardsStore([]);
+    send(res, 200, { cards });
+  } catch (error) {
+    send(res, 500, { error: error.message || "清空卡片库失败" });
+  }
 }
 
 async function handleExtractJobStart(req, res) {
@@ -916,6 +1048,31 @@ const server = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname.startsWith("/api/jobs/")) {
     handleJobStatus(req, res, url.pathname);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cards") {
+    await handleCardsList(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/cards/merge") {
+    await handleCardsMerge(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/cards") {
+    await handleCardSave(req, res);
+    return;
+  }
+
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/cards/")) {
+    await handleCardDelete(req, res, url.pathname);
+    return;
+  }
+
+  if (req.method === "DELETE" && url.pathname === "/api/cards") {
+    await handleCardsClear(req, res);
     return;
   }
 
