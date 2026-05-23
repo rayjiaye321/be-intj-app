@@ -1,17 +1,20 @@
 :root {
-  color-scheme: light;
-  --bg: #d7e6c2;
-  --screen: #f8f1d8;
-  --panel: #fff9df;
-  --ink: #202840;
-  --muted: #5b6478;
-  --line: #202840;
-  --blue: #5068b8;
-  --blue-dark: #2f3f82;
-  --green: #5da271;
-  --red: #c94f4f;
-  --yellow: #f0c44d;
-  --shadow: #8fa57e;
+  color-scheme: dark;
+  --bg: #0b1020;
+  --screen: #121a33;
+  --panel: #17213d;
+  --ink: #eef3ff;
+  --muted: #9aa8cb;
+  --line: #7f8fc9;
+  --blue: #4f6dff;
+  --blue-dark: #a7b8ff;
+  --green: #5ea8a0;
+  --red: #ff6b81;
+  --yellow: #ffd66b;
+  --shadow: #050814;
+  --surface: #1b2748;
+  --surface-strong: #23325f;
+  --surface-soft: #0f162e;
 }
 
 * {
@@ -23,8 +26,10 @@ body {
   margin: 0;
   min-height: 100%;
   background:
-    linear-gradient(45deg, rgba(255,255,255,0.18) 25%, transparent 25%) 0 0 / 12px 12px,
-    linear-gradient(45deg, transparent 75%, rgba(32,40,64,0.08) 75%) 0 0 / 12px 12px,
+    radial-gradient(circle at 20% 20%, rgba(143, 166, 255, 0.18), transparent 26%),
+    radial-gradient(circle at 80% 15%, rgba(255, 214, 107, 0.08), transparent 18%),
+    linear-gradient(45deg, rgba(255,255,255,0.04) 25%, transparent 25%) 0 0 / 12px 12px,
+    linear-gradient(45deg, transparent 75%, rgba(127,143,201,0.08) 75%) 0 0 / 12px 12px,
     var(--bg);
   color: var(--ink);
   font-family: "Courier New", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -59,11 +64,11 @@ select {
   width: 100%;
   border: 3px solid var(--line);
   border-radius: 0;
-  background: #fffef2;
+  background: var(--surface-soft);
   color: var(--ink);
   padding: 0.75rem;
   outline: none;
-  box-shadow: inset -3px -3px 0 rgba(32, 40, 64, 0.12);
+  box-shadow: inset -3px -3px 0 rgba(5, 8, 20, 0.45);
 }
 
 textarea {
@@ -167,7 +172,7 @@ h3 {
   display: inline-flex;
   align-items: center;
   border: 3px solid var(--line);
-  background: #fffef2;
+  background: var(--surface-soft);
   color: var(--ink);
   padding: 0.28rem 0.45rem;
   font-size: 0.78rem;
@@ -175,11 +180,11 @@ h3 {
 }
 
 .status-pill.online {
-  background: #d8f2cc;
+  background: rgba(94, 168, 160, 0.22);
 }
 
 .status-pill.offline {
-  background: #ffe3b4;
+  background: rgba(255, 214, 107, 0.18);
 }
 
 .nav-grid {
@@ -197,7 +202,7 @@ h3 {
   border: 3px solid var(--line);
   border-radius: 0;
   color: var(--ink);
-  background: #fffef2;
+  background: var(--surface-soft);
   padding: 0.65rem 0.7rem;
   box-shadow: 3px 3px 0 var(--line);
 }
@@ -205,12 +210,12 @@ h3 {
 .nav-tile.active,
 .pixel-primary {
   background: var(--blue);
-  color: #fffef2;
+  color: #eef3ff;
 }
 
 .danger-ghost-btn {
-  background: #ffe0df;
-  color: #7f1d1d;
+  background: rgba(255, 107, 129, 0.18);
+  color: #ffd7de;
 }
 
 .nav-tile:active,
@@ -285,7 +290,7 @@ body .view-panel.active {
 }
 
 .settings-grid .field input {
-  background: #fdf9ea;
+  background: var(--surface-soft);
 }
 
 .settings-actions {
@@ -339,7 +344,7 @@ body .view-panel.active {
   gap: 8px;
   align-items: center;
   border: 3px solid var(--line);
-  background: #fffef2;
+  background: var(--surface-soft);
   padding: 8px;
 }
 
@@ -368,7 +373,7 @@ body .view-panel.active {
   display: none;
   padding: 14px;
   border: 3px dashed var(--line);
-  background: #fffef2;
+  background: var(--surface-soft);
   color: var(--muted);
   text-align: center;
 }
@@ -380,7 +385,7 @@ body .view-panel.active {
 
 .card-item {
   border: 3px solid var(--line);
-  background: #fffef2;
+  background: var(--surface-soft);
   padding: 9px;
   display: grid;
   gap: 8px;
@@ -424,8 +429,8 @@ body .view-panel.active {
   min-height: 36px;
   padding: 0;
   border: 3px solid var(--line);
-  background: #ffe0df;
-  color: #7f1d1d;
+  background: rgba(255, 107, 129, 0.16);
+  color: #ffd7de;
   font-size: 1.2rem;
 }
 
