@@ -1,105 +1,96 @@
-# °¢ÀïÔÆÇáÁ¿·şÎñÆ÷ÉÏÏßÂ·Ïß
+# éƒ¨ç½²ä¸ç»´æŠ¤æ¸…å•
 
-Ä¿±ê£º°Ñµ±Ç°ÏîÄ¿×÷Îª PWA + ÔÆºó¶ËÅÜÆğÀ´¡£ÊÖ»ú¸ºÔğÊ¹ÓÃ£¬·şÎñÆ÷¸ºÔğÍøÒ³ÎÄÕÂ¡¢¹«ÖÚºÅÎÄÕÂºÍÕ³ÌùÕıÎÄµÄÌáÁ¶¡£
+å½“å‰æ–¹æ¡ˆï¼šæ‰‹æœºç«¯ PWA + äº‘æœåŠ¡å™¨åç«¯ã€‚æ‰‹æœºåªè´Ÿè´£è®¿é—®å’Œæ“ä½œï¼ŒæœåŠ¡å™¨è´Ÿè´£ç½‘é¡µæ­£æ–‡æå–ã€Kimi æç‚¼ã€å¡ç‰‡åŒæ­¥å’Œæ•°æ®ä¿å­˜ã€‚
 
-## 1. ÏÈ×¼±¸ÕËºÅºÍ×ÊÔ´
+## å½“å‰éƒ¨ç½²ç›®æ ‡
 
-- [ÄãÀ´×ö] ´ò¿ª°¢ÀïÔÆ¿ØÖÆÌ¨£º`https://home.console.aliyun.com/`
-- [ÄãÀ´×ö] ¹ºÂòÇáÁ¿Ó¦ÓÃ·şÎñÆ÷£¬ÍÆ¼ö Ubuntu 22.04 »ò 24.04
-- [ÄãÀ´×ö] ×¼±¸ 6 Î»Êı×ÖÃÜÂëºÍ Kimi API Key
-- [ÄãÀ´×ö] ¼ÇÂ¼·şÎñÆ÷¹«Íø IP ºÍµÇÂ¼·½Ê½
+- ç³»ç»Ÿï¼šUbuntu
+- è¿è¡Œç¯å¢ƒï¼šNode.js 20+
+- è¿›ç¨‹ç®¡ç†ï¼šPM2
+- é¡¹ç›®ç›®å½•ï¼š`/home/ubuntu/be-intj-app`
+- æµ‹è¯•åœ°å€ï¼š`http://æœåŠ¡å™¨å…¬ç½‘IP:4173`
 
-## 2. ´´½¨ GitHub Ë½ÓĞ²Ö¿â
+## é¦–æ¬¡å®‰è£…
 
-- [ÄãÀ´×ö] ´ò¿ª GitHub ĞÂ½¨²Ö¿â£º`https://github.com/new`
-- [ÄãÀ´×ö] ²Ö¿âÉèÎª `Private`
-- [ÎÒ¿É¶ÀÁ¢Íê³É] ÕûÀí´úÂë½á¹¹£¬È·±£¿É²¿Êğ
-
-## 3. ·şÎñÆ÷·ÅĞĞ¶Ë¿Ú
-
-- `22`£ºSSH µÇÂ¼
-- `80`£ºHTTP
-- `443`£ºHTTPS
-- ÁÙÊ±²âÊÔ¿ÉÒÔÏÈ¿ª `4173`
-
-## 4. ·şÎñÆ÷°²×°
+åœ¨æœåŠ¡å™¨ç»ˆç«¯æ‰§è¡Œï¼š
 
 ```bash
 sudo apt update
 sudo apt install -y git curl nginx
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo npm install -g pm2
 ```
 
-Èç¹ûÃ»ÓĞ Node.js 20+£¬ÔÙ×° Node¡£
-
-## 5. À­´úÂëºÍÅäÖÃ
+æ‹‰å–ä»£ç å¹¶é…ç½®ï¼š
 
 ```bash
-git clone <your-private-repo-url>
-cd be-intj
+git clone <ä½ çš„ç§æœ‰ä»“åº“åœ°å€> /home/ubuntu/be-intj-app
+cd /home/ubuntu/be-intj-app
 cp .env.example .env
 nano .env
+npm install
+npx playwright install --with-deps chromium
+pm2 start ecosystem.config.cjs
+pm2 save
 ```
 
-`.env` ÄÚÈİ£º
+`.env` é‡Œè‡³å°‘éœ€è¦ï¼š
 
 ```env
 PORT=4173
-APP_PASSWORD=ÄãµÄ6Î»Êı×ÖÃÜÂë
-KIMI_API_KEY=ÄãµÄKimi Key
+APP_PASSWORD=ä½ çš„6ä½æ•°å­—å¯†ç 
+KIMI_API_KEY=ä½ çš„Kimi API Key
 KIMI_BASE_URL=https://api.moonshot.cn/v1
 KIMI_MODEL=kimi-k2.6
 ```
 
-## 6. °²×°ÒÀÀµ²¢Æô¶¯
+## æ—¥å¸¸æ›´æ–°
+
+æœåŠ¡å™¨ä¸Šæ‰§è¡Œï¼š
 
 ```bash
-npm install
-npx playwright install --with-deps chromium
-npm install -g pm2
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup
-```
-
-## 7. ÏÈÓÃ IP ´ò¿ª
-
-ÊÖ»úä¯ÀÀÆ÷·ÃÎÊ£º
-
-```text
-http://·şÎñÆ÷¹«ÍøIP:4173
-```
-
-ÏÈÈ·ÈÏÄÜµÇÂ¼¡¢ÄÜÌáÁ¶ÍøÒ³ÎÄÕÂ¡¢ÄÜÕ³ÌùÕıÎÄÌáÁ¶¡£
-
-## 8. Nginx
-
-```bash
-sudo cp deploy/nginx.be-intj.conf /etc/nginx/sites-available/be-intj
-sudo ln -s /etc/nginx/sites-available/be-intj /etc/nginx/sites-enabled/be-intj
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-## 9. ¸üĞÂ
-
-```bash
-cd be-intj
-git pull
+cd /home/ubuntu/be-intj-app
+git pull origin main
 npm install
 pm2 restart be-intj
 ```
 
-## ÎÒ¿ÉÒÔ×ö
+ç„¶åæ‰‹æœºå’Œç”µè„‘å„åˆ·æ–°ä¸€æ¬¡é¡µé¢ã€‚
 
-- ¸Ä´úÂë
-- ÇåÀíÅäÖÃ
-- Ğ´²¿ÊğÃüÁî
-- ÅÅ²éÈÕÖ¾
-- ÅĞ¶ÏÊÇ´úÂëÎÊÌâ»¹ÊÇ²¿ÊğÎÊÌâ
+## å¿«é€Ÿæ£€æŸ¥
 
-## ÄãĞèÒª×ö
+```bash
+git rev-parse --short HEAD
+pm2 show be-intj
+curl http://127.0.0.1:4173/api/auth/status
+```
 
-- °¢ÀïÔÆÕËºÅ¡¢ÊµÃû¡¢Âò·şÎñÆ÷
-- GitHub Ë½ÓĞ²Ö¿â´´½¨
-- ·şÎñÆ÷µÇÂ¼ºÍÖ´ĞĞÃüÁî
-- Ìá¹©¹«Íø IP¡¢ÃÜÂë¡¢Kimi Key
+é¢„æœŸç»“æœï¼š
+
+- `pm2 show be-intj` æ˜¾ç¤ºè¿›ç¨‹åœ¨çº¿ã€‚
+- `/api/auth/status` èƒ½è¿”å› JSONã€‚
+- æœªç™»å½•è®¿é—® `/api/cards` åº”è¿”å› 401ã€‚
+- ç™»å½•å `/api/cards` è¿”å›åŒä¸€ä»½å¡ç‰‡åˆ—è¡¨ã€‚
+
+## æ•°æ®è¯´æ˜
+
+å¡ç‰‡ä¿å­˜åœ¨æœåŠ¡å™¨ï¼š
+
+```text
+data/cards.json
+```
+
+Kimi è®¾ç½®ä¿å­˜åœ¨æœåŠ¡å™¨ï¼š
+
+```text
+data/server-settings.json
+```
+
+`data/` å·²è¢« `.gitignore` å¿½ç•¥ï¼Œä»£ç æ›´æ–°ä¸ä¼šè¦†ç›–å¡ç‰‡åº“ã€‚
+
+## å½“å‰æ³¨æ„äº‹é¡¹
+
+- è§†é¢‘å¹³å°æå–å·²ç§»é™¤ï¼Œå½“å‰åªæ”¯æŒç½‘é¡µæ–‡ç« å’Œç²˜è´´æ­£æ–‡ã€‚
+- Kimi ä¸å¯ç”¨æ—¶ä¼šç›´æ¥æç¤ºå¹¶åœæ­¢ï¼Œä¸ä½¿ç”¨æœ¬åœ°è§„åˆ™æ›¿ä»£ã€‚
+- PWA ç¼“å­˜ç‰ˆæœ¬æ›´æ–°åï¼Œæ‰‹æœºç«¯éœ€è¦åˆ·æ–°ä¸€æ¬¡æ‰èƒ½æ‹¿åˆ°æœ€æ–°é¡µé¢ã€‚

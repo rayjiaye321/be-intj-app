@@ -1,4 +1,5 @@
 ﻿const STORAGE_KEY = "intj-knowledge-cards-v1";
+const SERVER_SYNC_KEY = "intj-knowledge-server-sync-v1";
 
 const elements = {
   lockScreen: document.getElementById("lockScreen"),
@@ -91,7 +92,7 @@ async function unlockApp() {
   elements.appShell.classList.remove("locked");
   elements.appShell.removeAttribute("aria-hidden");
   await refreshServerStatus();
-  await syncCardsFromServer({ mergeLocal: true });
+  await loadCardsFromServerFirst();
   startCardSyncLoop();
   switchView("new");
 }
@@ -139,6 +140,14 @@ function persistCards() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.cards));
 }
 
+function hasServerSyncMarker() {
+  return localStorage.getItem(SERVER_SYNC_KEY) === "1";
+}
+
+function markServerSyncReady() {
+  localStorage.setItem(SERVER_SYNC_KEY, "1");
+}
+
 async function apiJson(url, options = {}) {
   let response;
   try {
@@ -157,18 +166,44 @@ async function apiJson(url, options = {}) {
   return payload;
 }
 
-async function syncCardsFromServer({ mergeLocal = false } = {}) {
-  const localCards = loadCards();
-  const payload =
-    mergeLocal && localCards.length > 0
-      ? await apiJson("/api/cards/merge", {
-          method: "POST",
-          body: JSON.stringify({ cards: localCards }),
-        })
-      : await apiJson("/api/cards");
+async function syncCardsFromServer() {
+  const payload = await apiJson("/api/cards");
   state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
   persistCards();
+  markServerSyncReady();
   renderAllCardViews();
+}
+
+async function loadCardsFromServerFirst() {
+  const serverPayload = await apiJson("/api/cards");
+  const serverCards = (serverPayload.cards || []).filter(isUsableCard).map(normalizeCard);
+
+  if (serverCards.length > 0) {
+    state.cards = serverCards;
+    persistCards();
+    markServerSyncReady();
+    renderAllCardViews();
+    return;
+  }
+
+  const localCards = loadCards().filter(isUsableCard).map(normalizeCard);
+  if (localCards.length === 0 || hasServerSyncMarker()) {
+    state.cards = [];
+    persistCards();
+    markServerSyncReady();
+    renderAllCardViews();
+    return;
+  }
+
+  const payload = await apiJson("/api/cards/merge", {
+    method: "POST",
+    body: JSON.stringify({ cards: localCards }),
+  });
+  state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
+  persistCards();
+  markServerSyncReady();
+  renderAllCardViews();
+  showToast("已从本机旧数据恢复卡片");
 }
 
 function startCardSyncLoop() {
@@ -176,11 +211,11 @@ function startCardSyncLoop() {
   cardSyncTimer = setInterval(() => {
     if (document.hidden || elements.appShell.classList.contains("locked")) return;
     refreshCardsFromServer().catch(() => {});
-  }, 15000);
+  }, 60000);
 }
 
 function refreshCardsFromServer() {
-  return syncCardsFromServer({ mergeLocal: true });
+  return syncCardsFromServer();
 }
 
 async function saveCardToServer(card) {
@@ -540,7 +575,7 @@ function resetForm() {
   elements.coreKnowledge.value = "";
   elements.caseText.value = "";
   elements.category.value = "";
-elements.sourceType.value = "auto";
+  elements.sourceType.value = "auto";
   elements.sourceUrl.value = "";
   elements.rawText.value = "";
   state.editingId = null;

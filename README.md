@@ -1,121 +1,64 @@
-# INTJ ÖªÊ¶¿¨Æ¬
+# INTJ çŸ¥è¯†å¡ç‰‡
 
-ÊÖ»ú¶Ë PWA + Node ºó¶Ë¡£ÊÖ»ú¸ºÔğ·ÃÎÊ¡¢²Ù×÷ºÍ±¾µØ¿¨Æ¬±£´æ£»·şÎñÆ÷¸ºÔğÍøÒ³ÎÄÕÂ¡¢¹«ÖÚºÅÎÄÕÂºÍÕ³ÌùÕıÎÄµÄÌáÁ¶¡£
+æ‰‹æœºç«¯ PWA + Node åç«¯ã€‚ç”¨äºæŠŠç½‘é¡µæ–‡ç« æˆ–ç›´æ¥ç²˜è´´çš„æ­£æ–‡æç‚¼æˆæç®€çŸ¥è¯†å¡ç‰‡ï¼Œå¹¶åœ¨æ‰‹æœºç«¯å’Œç”µè„‘ç«¯å…±ç”¨åŒä¸€ä»½æœåŠ¡ç«¯å¡ç‰‡åº“ã€‚
 
-## ÔËĞĞ½á¹¹
+## å½“å‰èƒ½åŠ›
 
-- Ç°¶Ë£º`index.html`¡¢`app.js`¡¢`styles.css`¡¢`sw.js`
-- ºó¶Ë£º`server.js`
-- ²¿Êğ½Å±¾£º`deploy/setup-ubuntu.sh`
-- Nginx Ê¾Àı£º`deploy/nginx.be-intj.conf`
-- PM2 ÅäÖÃ£º`ecosystem.config.cjs`
+- æœåŠ¡ç«¯å¯†ç ç™»å½•ã€‚
+- Kimi API é…ç½®ä¿å­˜åˆ°æœåŠ¡å™¨ã€‚
+- ç½‘é¡µæ–‡ç« æ­£æ–‡æå–ã€‚
+- ç›´æ¥ç²˜è´´æ­£æ–‡æç‚¼ã€‚
+- å¡ç‰‡ç»Ÿä¸€ä¿å­˜åˆ°æœåŠ¡ç«¯ï¼Œæ‰‹æœºå’Œç”µè„‘åŒæ­¥ã€‚
+- å·²åŠ è½½è¿‡çš„å¡ç‰‡ä¼šä¿ç•™åœ¨æµè§ˆå™¨æœ¬åœ°ï¼Œæ–­ç½‘æ—¶å¯ç»§ç»­æŸ¥çœ‹æ—§å¡ç‰‡ã€‚
 
-## ±¾µØÔËĞĞ
+## å¡ç‰‡ç»“æ„
+
+å…¬å¼€å¡ç‰‡åªä¿ç•™ä¸‰é¡¹ï¼š
+
+- æ ¸å¿ƒçŸ¥è¯†ç‚¹
+- æ¡ˆä¾‹
+- åˆ†ç±»
+
+æ¥æºé“¾æ¥ã€åŸå§‹æ­£æ–‡ç­‰åªä½œä¸ºåå°å…ƒæ•°æ®ä¿å­˜ï¼Œä¸ä½œä¸ºå¡ç‰‡åˆ—è¡¨å±•ç¤ºå†…å®¹ã€‚
+
+## æœ¬åœ°è¿è¡Œ
 
 ```bash
 npm install
+cp .env.example .env
 npm start
 ```
 
-´ò¿ª£º
+æ‰“å¼€ï¼š
 
 ```text
 http://127.0.0.1:4173
 ```
 
-`.env` ±ØÌî£º
+## ç¯å¢ƒå˜é‡
 
 ```env
-APP_PASSWORD=123456
+PORT=4173
+APP_PASSWORD=your-6-digit-password
 KIMI_API_KEY=replace-with-your-kimi-api-key
 KIMI_BASE_URL=https://api.moonshot.cn/v1
 KIMI_MODEL=kimi-k2.6
 ```
 
-## GitHub Ë½ÓĞ²Ö¿â
+## æœåŠ¡å™¨æ›´æ–°
 
 ```bash
-git init
-git add .
-git commit -m "Initial deployable app"
-git branch -M main
-git remote add origin <your-private-repo-url>
-git push -u origin main
-```
-
-²»ÒªÌá½»£º
-
-- `.env`
-- `node_modules/`
-- `data/`
-- `.playwright-mcp/`
-- ÈÕÖ¾ÎÄ¼ş
-
-## °¢ÀïÔÆÇáÁ¿·şÎñÆ÷²¿Êğ
-
-ÍÆ¼ö Ubuntu 22.04/24.04¡£×îµÍ 2 ºË 4G¡£
-¿ØÖÆÌ¨·ÅĞĞ£º`22`¡¢`80`¡¢`443`¡£
-
-·şÎñÆ÷ÉÏÖ´ĞĞ£º
-
-```bash
-git clone <your-private-repo-url>
-cd be-intj
-chmod +x deploy/setup-ubuntu.sh
-bash deploy/setup-ubuntu.sh
-cp .env.example .env
-nano .env
-npm install
-npx playwright install --with-deps chromium
-npm install -g pm2
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup
-```
-
-`.env` Ê¾Àı£º
-
-```env
-PORT=4173
-APP_PASSWORD=ÄãµÄ6Î»Êı×ÖÃÜÂë
-KIMI_API_KEY=ÄãµÄKimi Key
-KIMI_BASE_URL=https://api.moonshot.cn/v1
-KIMI_MODEL=kimi-k2.6
-```
-
-²âÊÔ£º
-
-```bash
-curl http://127.0.0.1:4173
-```
-
-ÊÖ»úÏÈ·ÃÎÊ£º
-
-```text
-http://·şÎñÆ÷¹«ÍøIP:4173
-```
-
-## Nginx
-
-```bash
-sudo cp deploy/nginx.be-intj.conf /etc/nginx/sites-available/be-intj
-sudo ln -s /etc/nginx/sites-available/be-intj /etc/nginx/sites-enabled/be-intj
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-## ¸üĞÂ
-
-```bash
-cd be-intj
-git pull
+cd /home/ubuntu/be-intj-app
+git pull origin main
 npm install
 pm2 restart be-intj
 ```
 
-## ËµÃ÷
+æ›´æ–°åï¼Œæ‰‹æœºå’Œç”µè„‘é¡µé¢å„åˆ·æ–°ä¸€æ¬¡ï¼Œè®©æ–°çš„ PWA ç¼“å­˜ç”Ÿæ•ˆã€‚
 
-- µÇÂ¼ÃÜÂëÓÉ·şÎñÆ÷ `.env` ¿ØÖÆ¡£
-- Kimi Key Ö»·Å·şÎñÆ÷¶Ë¡£
-- ¿¨Æ¬±£´æÔÚÊÖ»úä¯ÀÀÆ÷±¾µØ¡£
-- µ±Ç°½öÖ§³ÖÍøÒ³ÎÄÕÂ¡¢¹«ÖÚºÅÎÄÕÂºÍÖ±½ÓÕ³ÌùÕıÎÄ¡£
+## æ•°æ®ä½ç½®
+
+- å¡ç‰‡åº“ï¼š`data/cards.json`
+- Kimi é…ç½®ï¼š`data/server-settings.json`
+
+`data/` ç›®å½•ä¸ä¼šæäº¤åˆ° GitHubï¼Œæ›´æ–°ä»£ç ä¸ä¼šè¦†ç›–æœåŠ¡å™¨ä¸Šçš„å¡ç‰‡æ•°æ®ã€‚

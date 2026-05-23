@@ -31,7 +31,7 @@
           />
           <button type="submit" class="pixel-primary">进入</button>
         </form>
-        <p id="lockHint" class="pixel-hint">密码只能在项目代码中修改。</p>
+        <p id="lockHint" class="pixel-hint">密码只能在项目代码或服务器配置中修改。</p>
       </div>
     </section>
 
@@ -70,14 +70,14 @@
                 <input id="sourceUrl" type="url" placeholder="https://..." autocomplete="off" />
               </label>
 
-                <label class="field">
-                  <span>来源类型</span>
-                  <select id="sourceType">
-                    <option value="auto">自动识别</option>
-                    <option value="page">网页文章</option>
-                    <option value="text">粘贴正文</option>
-                  </select>
-                </label>
+              <label class="field">
+                <span>来源类型</span>
+                <select id="sourceType">
+                  <option value="auto">自动识别</option>
+                  <option value="page">网页文章</option>
+                  <option value="text">粘贴正文</option>
+                </select>
+              </label>
 
               <div class="button-row compact-row">
                 <button type="button" id="pasteBtn" class="pixel-btn">粘贴内容</button>
@@ -101,12 +101,12 @@
               <div class="review-grid">
                 <label class="field">
                   <span>核心知识点</span>
-                  <textarea id="coreKnowledge" rows="6" placeholder="主题：...\A观点1：..." ></textarea>
+                  <textarea id="coreKnowledge" rows="6" placeholder="主题：...\A观点1：..."></textarea>
                 </label>
 
                 <label class="field">
                   <span>案例</span>
-                  <textarea id="caseText" rows="4" placeholder="保留案例或例证"></textarea>
+                  <textarea id="caseText" rows="4" placeholder="保留案例或例证。"></textarea>
                 </label>
 
                 <label class="field">
@@ -187,7 +187,7 @@
               <div class="settings-head">
                 <div>
                   <h3>Kimi API</h3>
-                  <p>可在这里修改并保存到服务器，页面不会长期保留明文密钥。</p>
+                  <p>在这里修改并保存到服务器，页面不会长期保留明文密钥。</p>
                 </div>
               </div>
               <div class="settings-grid">

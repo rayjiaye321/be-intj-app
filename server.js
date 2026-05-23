@@ -364,7 +364,7 @@ async function getBrowser() {
 
 async function fetchPage(url) {
   const target = new URL(url);
-  if (!["http:", "https:"].includes(target.protocol)) throw new Error("??? http ? https ??");
+  if (!["http:", "https:"].includes(target.protocol)) throw new Error("链接必须以 http 或 https 开头");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
@@ -379,10 +379,10 @@ async function fetchPage(url) {
       redirect: "follow",
     });
 
-    if (!response.ok) throw new Error(`???? ${response.status}????????????`);
+    if (!response.ok) throw new Error(`页面返回 ${response.status}，无法直接读取正文`);
     const contentType = response.headers.get("content-type") || "";
     if (!/text\/html|text\/plain|application\/xhtml\+xml/i.test(contentType)) {
-      throw new Error("???????????");
+      throw new Error(`目标内容不是网页正文：${contentType || "未知类型"}`);
     }
 
     const reader = response.body?.getReader();
