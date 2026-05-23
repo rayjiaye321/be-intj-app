@@ -58,6 +58,7 @@ let state = {
 };
 
 let toastTimer = null;
+let cardSyncTimer = null;
 const backupFileInput = document.createElement("input");
 backupFileInput.type = "file";
 backupFileInput.accept = "application/json";
@@ -91,6 +92,7 @@ async function unlockApp() {
   elements.appShell.removeAttribute("aria-hidden");
   await refreshServerStatus();
   await syncCardsFromServer({ mergeLocal: true });
+  startCardSyncLoop();
   switchView("new");
 }
 
@@ -169,29 +171,35 @@ async function syncCardsFromServer({ mergeLocal = false } = {}) {
   renderAllCardViews();
 }
 
+function startCardSyncLoop() {
+  if (cardSyncTimer) return;
+  cardSyncTimer = setInterval(() => {
+    if (document.hidden || elements.appShell.classList.contains("locked")) return;
+    refreshCardsFromServer().catch(() => {});
+  }, 15000);
+}
+
+function refreshCardsFromServer() {
+  return syncCardsFromServer({ mergeLocal: true });
+}
+
 async function saveCardToServer(card) {
   const payload = await apiJson("/api/cards", {
     method: "POST",
     body: JSON.stringify({ card }),
   });
   state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
-  persistCards();
-  renderAllCardViews();
   return payload.card ? normalizeCard(payload.card) : null;
 }
 
 async function deleteCardFromServer(id) {
   const payload = await apiJson(`/api/cards/${encodeURIComponent(id)}`, { method: "DELETE" });
   state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
-  persistCards();
-  renderAllCardViews();
 }
 
 async function clearCardsOnServer() {
   const payload = await apiJson("/api/cards", { method: "DELETE" });
   state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
-  persistCards();
-  renderAllCardViews();
 }
 
 async function mergeCardsToServer(cards) {
@@ -200,8 +208,6 @@ async function mergeCardsToServer(cards) {
     body: JSON.stringify({ cards }),
   });
   state.cards = (payload.cards || []).filter(isUsableCard).map(normalizeCard);
-  persistCards();
-  renderAllCardViews();
 }
 
 function isUsableCard(card) {
@@ -254,7 +260,8 @@ async function readJsonResponse(response) {
   try {
     return raw ? JSON.parse(raw) : {};
   } catch {
-    throw new Error(`服务器返回了不可解析内容：${raw.slice(0, 120) || response.status}`);
+    const statusLabel = response.status ? `${response.status}${response.statusText ? ` ${response.statusText}` : ""}` : "未知状态";
+    throw new Error(`服务器返回了不可解析内容（${statusLabel}）：${raw.slice(0, 120) || "空响应"}`);
   }
 }
 
@@ -520,10 +527,12 @@ async function saveCurrentCard() {
     await saveCardToServer(cardToSave);
     elements.importHint.textContent = state.editingId ? "卡片已更新。" : "卡片已入库。";
     showToast(state.editingId ? "卡片已更新" : "卡片已入库");
+    await refreshCardsFromServer();
     resetForm();
   } catch (error) {
     elements.importHint.textContent = `保存失败：${error.message || "服务器不可用"}`;
     showToast("保存失败");
+    await refreshCardsFromServer().catch(() => {});
   }
 }
 function resetForm() {
@@ -694,6 +703,7 @@ async function importBackupFile() {
       return;
     }
     await mergeCardsToServer(normalized);
+    await refreshCardsFromServer();
     showToast(`已导入 ${normalized.length} 张卡片`);
   };
 
@@ -736,6 +746,7 @@ async function clearAllCards() {
   if (!window.confirm("确定清空全部卡片？该操作会删除服务器上的统一卡片库。")) return;
   try {
     await clearCardsOnServer();
+    await refreshCardsFromServer();
     resetForm();
     showToast("已清空全部卡片");
   } catch (error) {
@@ -750,6 +761,7 @@ async function deleteCard(id) {
   try {
     await deleteCardFromServer(id);
     if (state.editingId === id) resetForm();
+    await refreshCardsFromServer();
     showToast("卡片已删除");
   } catch (error) {
     showToast(error.message || "删除失败");
@@ -785,10 +797,11 @@ async function bootstrap() {
   elements.sourceType.value = "auto";
   elements.passwordInput.focus();
   try {
-    await syncCardsFromServer();
     const response = await fetch("/api/auth/status");
     const payload = await readJsonResponse(response);
-    if (response.ok && payload.authenticated) await unlockApp();
+    if (response.ok && payload.authenticated) {
+      await unlockApp();
+    }
   } catch {}
 
   if ("serviceWorker" in navigator) {
@@ -836,6 +849,14 @@ elements.cardsList.addEventListener("click", handleListClick);
 elements.organizeCardsList.addEventListener("click", handleListClick);
 window.addEventListener("online", updateNetworkStatus);
 window.addEventListener("offline", updateNetworkStatus);
+window.addEventListener("focus", () => {
+  if (elements.appShell.classList.contains("locked")) return;
+  refreshCardsFromServer().catch(() => {});
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || elements.appShell.classList.contains("locked")) return;
+  refreshCardsFromServer().catch(() => {});
+});
 window.addEventListener("beforeinstallprompt", (event) => {
   event.preventDefault();
   showToast("可安装为独立应用");
